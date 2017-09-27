@@ -1,0 +1,12 @@
+{
+  "name": "quickcheck",
+  "version": "0.0.1",
+  "description": "nim quickcheck",
+  "main": "main.js",
+  "keywords": [],
+  "author": "Alexander Ivanov",
+  "license": "MIT",
+  "dependencies": {
+    "random-js": "^1.0.8"
+  }
+}
