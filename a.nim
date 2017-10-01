@@ -56,5 +56,10 @@ suite "standart":
   test "normal":
     check(2 == 2)
 
-  echo "ok"
+  # echo "ok"
 
+
+  # quickcheck(a=Int(), b=Int()):
+  #   # check(a * b == gcd(a, b) * lcm(a, b))
+  #   check(gcd(a, b) > 1)
+      

@@ -41,8 +41,13 @@ else:
 
 proc generateQuickcheck*(args: varargs[NimNode]): NimNode
 
+proc generateQuicktest*(args: NimNode): NimNode
+
 macro quickcheck*(args: varargs[untyped]): untyped =
   result = generateQuickcheck(args)
+
+macro quicktest*(args: untyped): untyped =
+  result = generateQuicktest(args)
 
 proc replaceNames(node: var NimNode, names: seq[string]) =
   var z = 0
@@ -110,6 +115,79 @@ proc generateQuickcheck(args: varargs[NimNode]): NimNode =
   result.add(generatedTest)
   echo repr(result)
 
+const BUILTIN = ["int", "bool", "string"]
+
+proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNode, NimNode) =
+  assert generator.kind == nnkIdentDefs
+  var ident = generator[0]
+  var identGen = newIdentNode(!("$1Gen" % $(generator[0])))
+  var expression = generator[1]
+  var generatorName: string
+  var args: seq[NimNode] = @[]
+  var genericArgs: seq[NimNode] = @[]
+  if expression.kind == nnkIdent:
+    generatorName = $expression
+  else:
+    generatorName = "$1" % $(expression[0])
+    args = toSeq(expression)
+    args.keepItIf(it.kind != nnkIdent)
+  if generatorName in BUILTIN:
+    genericArgs = @[newIdentNode(!($generatorName))]
+    generatorName = "Type"
+  replaceNames(expression, names)
+  var generatorNameNode = newIdentNode(!generatorName)
+  result[0] = quote:
+    var `identGen` = `generatorNameNode`()
+  for arg in args:
+    result[0][0][0][2].add(arg)
+  if len(genericArgs) > 0:
+    result[0][0][0][2][0] = nnkBracketExpr.newTree(generatorNameNode)
+    for a in genericArgs:
+      result[0][0][0][2][0].add(a)
+  result[1] = quote:
+    var `ident` = `identGen`.generate()
+    `identGen`.last = `ident`
+
+  var s = newLit($generator[0])
+  var error = newIdentNode(!"error")
+  result[2] = quote:
+    `error`.add("[" & `s` & "] " & $(`ident`) & "\n")
+
+proc generateQuicktest*(args: NimNode): NimNode =
+  var label = $args[0]
+  var generators = toSeq(args[1][3])
+  generators.keepItIf(it.kind != nnkEmpty)
+  var generatorNames = generators.mapIt($it[0])
+  var gens = generators.mapIt(generateGenerator(it, generatorNames))
+  result = buildMacro:
+    stmtList()
+  result = result[0]
+  var init = buildMacro:
+    stmtList()
+  init = init[0]
+  var error = newIdentNode(!"error")
+  var checkpoint = quote:
+    var `error` = "values:\n"
+
+  for gen in gens:
+    result.add(gen[0])
+    init.add(gen[1])
+    checkpoint.add(gen[2])
+
+  var acheckpoint = newIdentNode(!"checkpoint")
+  var e = quote:
+    `acheckpoint`(`error`)
+  checkpoint.add(e)
+  var test = args[^1]
+  var generatedTest = quote:
+    for z in 0..<50:
+      `init`
+      `checkpoint`
+      `test`
+  
+  result.add(generatedTest)
+  echo repr(result)
+
 type
   Alphabet* = enum AUndefined, AAll, AAscii, ANone
 
@@ -124,7 +202,7 @@ type
     min*:       int
     max*:       int
 
-  TextGen* = ref object of Gen[string]
+  StringGen* = ref object of Gen[string]
     limit*:     LimitMixin
     symbols:    seq[char]
     alphabet:   Alphabet
@@ -133,7 +211,7 @@ type
 
   InsideGen* = ref object of Gen[string]
     limit*:     LimitMixin
-    inside*:    TextGen
+    inside*:    StringGen
     # last*:      string
     # rng*:       SystemRandom
 
@@ -181,13 +259,25 @@ proc generateSequence*[T](rng: var Engine, generator: proc(number: int): T, limi
     var number = randomInt(rng, limit)
     result.add(generator(number))
 
-proc Text*(symbols: set[char], min: int = 0, max: int = 20): TextGen =
-  result = TextGen(limit: LimitMixin(min: min, max: max), symbols: toSeq(symbols), alphabet: AUndefined, last: "", rng: initRng())
+proc String*(symbols: set[char], min: int = 0, max: int = 20): StringGen =
+  result = StringGen(limit: LimitMixin(min: min, max: max), symbols: toSeq(symbols), alphabet: AUndefined, last: "", rng: initRng())
 
-proc Text*(alphabet: Alphabet = AAll, min: int = 0, max: int = 20): TextGen =
-  result = TextGen(limit: LimitMixin(min: min, max: max), alphabet: alphabet, last: "", rng: initRng())
+proc String*(alphabet: Alphabet = AAll, min: int = 0, max: int = 20): StringGen =
+  result = StringGen(limit: LimitMixin(min: min, max: max), alphabet: alphabet, last: "", rng: initRng())
 
-proc generate*(g: var TextGen): string =
+
+proc uniq(skip: seq[int]): IntSet =
+  result = initIntSet()
+  for s in skip:
+    result.incl(s)
+
+proc Type*[string](min: int = 0, max: int = 20): Gen[string] = 
+  result = StringGen(limit: LimitMixin(min: min, max: max), alphabet: AAll, last: "", rng: initRng())
+
+proc Type*[int](min: int = 0, max: int = 20): Gen[int] =
+  result = IntGen(limit: LimitMixin(min: min, max: max), skip: uniq(@[]), rng: initRng())
+
+proc generate*(g: var StringGen): string =
   var chars: seq[char]
   if g.alphabet == AUndefined:
     chars = generateSequence(g.rng, g.symbols, g.min, g.max)
@@ -207,7 +297,7 @@ proc generate*(g: var TextGen): string =
     chars = generateSequence(g.rng, generator, limit, g.min, g.max)
   result = chars.join()
 
-proc Inside*(s: TextGen, min: int = 0, max: int = 10): InsideGen =
+proc Inside*(s: StringGen, min: int = 0, max: int = 10): InsideGen =
   result = InsideGen(limit: LimitMixin(min: min, max: max), inside: s, rng: initRng())
 
 proc generate*(g: var InsideGen): string =
@@ -216,11 +306,6 @@ proc generate*(g: var InsideGen): string =
   result = g.inside.last[first..first + length - 1]
   if len(result) < g.min:
     result.add(repeat(" ", g.min - len(result)))
-
-proc uniq(skip: seq[int]): IntSet =
-  result = initIntSet()
-  for s in skip:
-    result.incl(s)
 
 proc Int*(min: int = low(int), max: int = high(int), skip: seq[int] = @[]): IntGen =
   result = IntGen(limit: LimitMixin(min: min, max: max), skip: uniq(skip), rng: initRng())
