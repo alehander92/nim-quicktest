@@ -39,15 +39,15 @@ else:
     engine
 
 
-proc generateQuickcheck*(args: varargs[NimNode]): NimNode
-
 proc generateQuicktest*(args: NimNode): NimNode
-
-macro quickcheck*(args: varargs[untyped]): untyped =
-  result = generateQuickcheck(args)
 
 macro quicktest*(args: untyped): untyped =
   result = generateQuicktest(args)
+  var name = args[0]
+  result = quote:
+    test `name`:
+      `result`
+  echo repr(result)
 
 proc replaceNames(node: var NimNode, names: seq[string]) =
   var z = 0
@@ -60,63 +60,6 @@ proc replaceNames(node: var NimNode, names: seq[string]) =
       replaceNames(son, names)
     inc z
 
-proc generateProperty(property: NimNode, names: seq[string]): (NimNode, NimNode, NimNode) =
-  assert property.kind == nnkExprEqExpr
-  var ident = property[0]
-  var identGen = newIdentNode(!("$1Gen" % $(property[0])))
-  var expression = property[1]
-  replaceNames(expression, names)
-  result[0] = quote:
-    var `identGen` = `expression`
-  result[1] = quote:
-    var `ident` = `identGen`.generate()
-    `identGen`.last = `ident`
-
-  var s = newLit($property[0])
-  var error = newIdentNode(!"error")
-  result[2] = quote:
-    `error`.add("[" & `s` & "] " & $(`ident`) & "\n")
-
-proc `[]`*(n: NimNode, s: Slice[int]): seq[NimNode] =
-  result = @[]
-  for z in s.a..s.b:
-    result.add(n[z])
-
-proc generateQuickcheck(args: varargs[NimNode]): NimNode =
-  var properties = (@args)[0][0.. < ^1]
-  var propertyNames = properties.mapIt($it[0])
-  var gens = properties.mapIt(generateProperty(it, propertyNames))
-  result = buildMacro:
-    stmtList()
-  result = result[0]
-  var init = buildMacro:
-    stmtList()
-  init = init[0]
-  var error = newIdentNode(!"error")
-  var checkpoint = quote:
-    var `error` = "values:\n"
-
-  for gen in gens:
-    result.add(gen[0])
-    init.add(gen[1])
-    checkpoint.add(gen[2])
-
-  var acheckpoint = newIdentNode(!"checkpoint")
-  var e = quote:
-    `acheckpoint`(`error`)
-  checkpoint.add(e)
-  var test = args[0][^1]
-  var generatedTest = quote:
-    for z in 0..<50:
-      `init`
-      `checkpoint`
-      `test`
-  
-  result.add(generatedTest)
-  echo repr(result)
-
-const BUILTIN = ["int", "bool", "string"]
-
 proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNode, NimNode) =
   assert generator.kind == nnkIdentDefs
   var ident = generator[0]
@@ -124,15 +67,18 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
   var expression = generator[1]
   var generatorName: string
   var args: seq[NimNode] = @[]
-  var genericArgs: seq[NimNode] = @[]
+  var isBuiltin = true
   if expression.kind == nnkIdent:
     generatorName = $expression
+  elif expression.kind == nnkPrefix and $expression[0] == "!":
+    generatorName = $expression[1]
+    isBuiltin = false
   else:
     generatorName = "$1" % $(expression[0])
     args = toSeq(expression)
     args.keepItIf(it.kind != nnkIdent)
-  if generatorName in BUILTIN:
-    genericArgs = @[newIdentNode(!($generatorName))]
+  if isBuiltin:
+    args = concat(@[newIdentNode(!($generatorName))], args)
     generatorName = "Type"
   replaceNames(expression, names)
   var generatorNameNode = newIdentNode(!generatorName)
@@ -140,10 +86,6 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
     var `identGen` = `generatorNameNode`()
   for arg in args:
     result[0][0][0][2].add(arg)
-  if len(genericArgs) > 0:
-    result[0][0][0][2][0] = nnkBracketExpr.newTree(generatorNameNode)
-    for a in genericArgs:
-      result[0][0][0][2][0].add(a)
   result[1] = quote:
     var `ident` = `identGen`.generate()
     `identGen`.last = `ident`
@@ -178,7 +120,7 @@ proc generateQuicktest*(args: NimNode): NimNode =
   var e = quote:
     `acheckpoint`(`error`)
   checkpoint.add(e)
-  var test = args[^1]
+  var test = args[^1][^1]
   var generatedTest = quote:
     for z in 0..<50:
       `init`
@@ -186,7 +128,6 @@ proc generateQuicktest*(args: NimNode): NimNode =
       `test`
   
   result.add(generatedTest)
-  echo repr(result)
 
 type
   Alphabet* = enum AUndefined, AAll, AAscii, ANone
@@ -271,10 +212,10 @@ proc uniq(skip: seq[int]): IntSet =
   for s in skip:
     result.incl(s)
 
-proc Type*[string](min: int = 0, max: int = 20): Gen[string] = 
+proc Type*(t: typedesc[string], min: int = 0, max: int = 20): StringGen = 
   result = StringGen(limit: LimitMixin(min: min, max: max), alphabet: AAll, last: "", rng: initRng())
 
-proc Type*[int](min: int = 0, max: int = 20): Gen[int] =
+proc Type*(t: typedesc[int], min: int = 0, max: int = 20): IntGen =
   result = IntGen(limit: LimitMixin(min: min, max: max), skip: uniq(@[]), rng: initRng())
 
 proc generate*(g: var StringGen): string =
