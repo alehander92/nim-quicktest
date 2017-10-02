@@ -74,9 +74,13 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
     generatorName = $expression[1]
     isBuiltin = false
   else:
-    generatorName = "$1" % $(expression[0])
+    if expression[0].kind == nnkPrefix and $expression[0][0] == "!":
+      generatorName = $(expression[0][1])
+      isBuiltin = false
+    else:
+      generatorName = $(expression[0])
     args = toSeq(expression)
-    args.keepItIf(it.kind != nnkIdent)
+    args.keepItIf(it.kind != nnkIdent and it.kind != nnkPrefix)
   if isBuiltin:
     args = concat(@[newIdentNode(!($generatorName))], args)
     generatorName = "Type"
