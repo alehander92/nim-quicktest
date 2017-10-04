@@ -33,6 +33,21 @@ else:
 
 proc generateQuicktest*(args: NimNode): NimNode
 
+macro ObjectGen*(t: typed, args: untyped): untyped =
+  var typ = getType(t)
+  if typ.kind == nnkBracketExpr and typ[1].kind == nnkBracketExpr and $typ[1][0] == "ref":
+    typ = getType(typ[1][1])
+  echo treerepr(typ)
+  echo treerepr(args)
+  var name = args[0]
+  var call = args[1][0]
+  result = quote:
+    echo 0
+  # var gen = nnkExprColonExpr.newTree(
+  #   name,
+
+
+
 macro quicktest*(args: untyped): untyped =
   result = generateQuicktest(args)
   var name = args[0]
@@ -112,8 +127,12 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
     args = concat(@[newIdentNode(!($generatorName))], args)
     generatorName = "Type"
   var generatorNameNode = newIdentNode(!generatorName)
-  result[0] = quote:
-    var `identGen` = `generatorNameNode`()
+  if generator[1].kind == nnkObjConstr:
+    result[0] = quote:
+      var `identGen` = ObjectGen()
+  else:
+    result[0] = quote:
+      var `identGen` = `generatorNameNode`()
   for arg in args:
     result[0][0][0][2].add(arg)
   result[1] = quote:
@@ -190,13 +209,14 @@ type
   FloatGen* = ref object of Gen[float]
     limit*:     LimitMixin[float]
 
-  SeqGen*[T] = ref object
-    slimit*:    LimitMixin[int]
-    sfil*:      FilterMixin[seq[T]]
-    last*:      seq[T]
+  SeqGen*[T] = ref object of Gen[seq[T]]
+    # slimit*:    LimitMixin[int]
+    # sfil*:      FilterMixin[seq[T]]
+    limit*:     LimitMixin[int]
+    # last*:      seq[T]
     element*:   Gen[T]
     infer*:     bool
-    rng*:       Engine
+    # rng*:       Engine
 
   InsideGen* = ref object of Gen[string]
     limit*:     LimitMixin[int]
@@ -347,7 +367,7 @@ proc Type*[T](
     trans: (seq[T]) -> seq[T] = nil,
     min: int = 0,
     max: int = 20): SeqGen[T] =
-  result = SeqGen[T](element: arbitrary(T), infer: true, slimit: LimitMixin[int](min: min, max: max), sfil: FilterMixin[seq[T]](test: test, trans: trans), rng: initRng())
+  result = SeqGen[T](element: arbitrary(T), infer: true, limit: LimitMixin[int](min: min, max: max), fil: FilterMixin[seq[T]](test: test, trans: trans), rng: initRng())
 
 
 proc Type*[T](
@@ -357,7 +377,7 @@ proc Type*[T](
     trans: (seq[T]) -> seq[T] = nil,
     min: int = 0,
     max: int = 20): SeqGen[T] =
-  result = SeqGen[T](element: element, infer: false, slimit: LimitMixin[int](min: min, max: max), sfil: FilterMixin[seq[T]](test: test, trans: trans), rng: initRng())
+  result = SeqGen[T](element: element, infer: false, limit: LimitMixin[int](min: min, max: max), fil: FilterMixin[seq[T]](test: test, trans: trans), rng: initRng())
 
 proc generateInternal*(g: var StringGen): string =
   var chars: seq[char]
@@ -412,11 +432,11 @@ proc generate*[T](g: var WithFilter[T]): T =
 
 proc generate*[T](g: var SeqGen[T]): seq[T] =
   var started = false
-  while not started or not (g.sfil.test == nil or g.sfil.test(result)):
+  while not started or not (g.test() == nil or g.test()(result)):
     started = true
     result = generateInternal(g)
-    if g.sfil.trans != nil:
-      result = g.sfil.trans(result)
+    if g.fil.trans != nil:
+      result = g.fil.trans(result)
 
 proc generateInternal*(g: var CharGen): char =
   result = chr(randomIn(g.rng, 0, 127))
@@ -426,7 +446,7 @@ proc generateInternal*(g: var FloatGen): float =
 
 
 proc generateInternal*[T](g: var SeqGen[T]): seq[T] =
-  var length = randomIn(g.rng, g.slimit.min, g.slimit.max)
+  var length = randomIn(g.rng, g.limit.min, g.limit.max)
   result = @[]
   for z in 0..<length:
     echo z
