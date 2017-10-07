@@ -37,8 +37,6 @@ macro ObjectGen*(t: typed, args: untyped): untyped =
   var typ = getType(t)
   if typ.kind == nnkBracketExpr and typ[1].kind == nnkBracketExpr and $typ[1][0] == "ref":
     typ = getType(typ[1][1])
-  echo treerepr(typ)
-  echo treerepr(args)
   var name = args[0]
   var call = args[1][0]
   result = quote:
@@ -48,7 +46,7 @@ macro ObjectGen*(t: typed, args: untyped): untyped =
 
 
 
-macro quicktest*(args: untyped): untyped =
+macro quicktest*(args: varargs[untyped]): untyped =
   result = generateQuicktest(args)
   var name = args[0]
   result = quote:
@@ -146,7 +144,13 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
 
 proc generateQuicktest*(args: NimNode): NimNode =
   var label = $args[0]
-  var generators = toSeq(args[1][3])
+  var times = newLit(50)
+  var generators: seq[NimNode]
+  if args[1].kind == nnkIntLit:
+    times = args[1]
+    generators = toSeq(args[2][3])
+  else:
+    generators = toSeq(args[1][3])
   generators.keepItIf(it.kind != nnkEmpty)
   var generatorNames = generators.mapIt($it[0])
   var gens = generators.mapIt(generateGenerator(it, generatorNames))
@@ -171,7 +175,7 @@ proc generateQuicktest*(args: NimNode): NimNode =
   checkpoint.add(e)
   var test = args[^1][^1]
   var generatedTest = quote:
-    for z in 0..<50:
+    for z in 0..<`times`:
       `init`
       `checkpoint`
       `test`
