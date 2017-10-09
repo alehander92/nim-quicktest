@@ -293,7 +293,7 @@ proc arbitrary*[T](t: typedesc[SeqGen[T]]): SeqGen[T] =
 proc randomIn*(rng: var Engine, min: int, max: int): int =
   if min == low(int):
     return randomInt(rng, high(int))
-  return randomInt(rng, max + (1 - min)) + min
+  return randomInt(rng, max - min) + min
 
 proc choice*[T](rng: var Engine, elements: seq[T]): T =
   result = elements[randomInt(rng, len(elements))]
