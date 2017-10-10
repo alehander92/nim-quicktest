@@ -19,7 +19,7 @@ else:
       engine*: js
 
   proc randomInt*(a: var Engine, max: int): int =
-    cast[int](a.engine.integer(0, max))
+    cast[int](a.engine.integer(0, max - 1))
 
   var require* {.importc.}: (cstring) -> js
   var jsrandom = require(cstring"random-js")
