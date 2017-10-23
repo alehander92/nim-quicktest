@@ -132,15 +132,17 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
     result[0] = quote:
       var `identGen` = `generatorNameNode`()
   for arg in args:
-    result[0][0][0][2].add(arg)
+    result[0][0][2].add(arg)
   result[1] = quote:
     var `ident` = `identGen`.generate()
     `identGen`.last = `ident`
 
   var s = newLit($generator[0])
   var error = newIdentNode(!"error")
+  var add = newIdentNode(!"add")
   result[2] = quote:
-    `error`.add("[" & `s` & "] " & $(`ident`) & "\n")
+    `error`.`add`("[" & `s` & "] " & $(`ident`) & "\n")
+  echo treerepr(result[2])
 
 proc generateQuicktest*(args: NimNode): NimNode =
   var label = $args[0]
@@ -164,6 +166,7 @@ proc generateQuicktest*(args: NimNode): NimNode =
   var checkpoint = quote:
     var `error` = "values:\n"
 
+  checkpoint = nnkStmtList.newTree(checkpoint)
   for gen in gens:
     result.add(gen[0])
     init.add(gen[1])
