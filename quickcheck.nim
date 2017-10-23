@@ -142,7 +142,6 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
   var add = newIdentNode(!"add")
   result[2] = quote:
     `error`.`add`("[" & `s` & "] " & $(`ident`) & "\n")
-  echo treerepr(result[2])
 
 proc generateQuicktest*(args: NimNode): NimNode =
   var label = $args[0]
