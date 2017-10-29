@@ -1,5 +1,5 @@
 import macros, breeze
-import strutils, sequtils, tables, intsets, future
+import strutils, sequtils, tables, intsets, sets, future
 
 when not defined(js):
   import random.urandom, random.xorshift
@@ -35,6 +35,8 @@ proc generateQuicktest*(args: NimNode): NimNode
 
 proc nameTest*(args: NimNode): string
 
+proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze: bool = true): (NimNode, Table[string, Table[string, string]])
+
 macro ObjectGen*(t: typed, args: untyped): untyped =
   var typ = getType(t)
   if typ.kind == nnkBracketExpr and typ[1].kind == nnkBracketExpr and $typ[1][0] == "ref":
@@ -51,7 +53,7 @@ macro quicktest*(args: varargs[untyped]): untyped =
   result = quote:
     test `name`:
       `result`
-  # echo repr(result)
+  echo repr(result)
 
 proc replaceNames(node: var NimNode, names: seq[string]) =
   var z = 0
@@ -64,10 +66,181 @@ proc replaceNames(node: var NimNode, names: seq[string]) =
       replaceNames(son, names)
     inc z
 
+proc generateTypeArgs(expression: NimNode, base: NimNode): seq[NimNode] =
+  var element = expression
+  if element.kind == nnkIdent:
+    var e = quote:
+      Type[`element Gen`]()
+    result = @[e]
+  else:
+    element = element[0]
+    var t = quote:
+      Type(`element`)
+    t = nnkExprEqExpr.newTree(newIdentNode(!"element"), t)
+    result = @[t]
+    var z = 0
+    for x in expression:
+      if z > 0:
+        t[1].add(x)
+      inc z        
+  var a = base
+  var t2 = quote:
+    `a`[`element`]
+  result = concat(@[t2], result)
+
+proc generateTypeArgs2(expression: NimNode): seq[NimNode] =
+  var element = expression
+  if element.kind == nnkIdent:
+    var e = quote:
+      Type[`element Gen`]()
+    result = @[e]
+  else:
+    element = element[0]
+    echo repr(expression)
+    var t = quote:
+      Type(`element`)
+    t = nnkExprEqExpr.newTree(newIdentNode(!"element"), t)
+    result = @[t]
+    var z = 0
+    for x in expression:
+      if z > 0:
+        t[1].add(x)
+      inc z        
+
+proc analyzeInternal(name: NimNode, fields: NimNode): seq[NimNode] =
+  var x = getType(name)
+  var y = getType(x[1][1])
+  # echo treerepr(y)
+  var fieldsRepr = toSet[string](@[])
+  for field in fields:
+    fieldsRepr.incl(repr(field)[1..^2])
+  result = @[]
+  for field in y[2]:
+    if repr(field) notin fieldsRepr:
+      result.add(field)
+
+macro analyzeObject(name: typed, gen: string, fields: varargs[string]): untyped =
+  var internal = analyzeInternal(name, fields)
+  result = nnkStmtList.newTree()
+  for field in internal:
+    var v = getType(field)
+    var (n, t) = generateTweak(
+      nnkExprEqExpr.newTree(
+        newIdentNode(!repr(field)),
+        nnkCall.newTree(newIdentNode(!repr(v)))),
+      newIdentNode(!("$1Field$2" % [$gen, repr(field)])),
+      analyze=false)
+    echo treerepr(n)
+    result.add(nnkVarSection.newTree(
+      nnkIdentDefs.newTree(
+        n[0][0][0],
+        newEmptyNode(),
+        n[1][0][0][2])))
+
+macro analyzeLoop(name: typed, gen: string, fields: varargs[string]): untyped =
+  var internal = analyzeInternal(name, fields)
+  result = nnkStmtList.newTree()
+  for field in internal:
+    var v = getType(field)
+    var genQuote = newIdentNode(!($gen))
+    var f = newIdentNode(!repr(field))
+    var generator = newIdentNode(!("$1Field$2Gen" % [$gen, repr(field)]))
+    var t = quote:
+      `genQuote`.`f` = `generator`.generate()
+    result.add(t)
+  echo repr(result)
+
+let BUILTIN_NAMES = toSet(["string", "int", "float", "bool"])
+
+proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze: bool = true): (NimNode, Table[string, Table[string, string]]) =
+  var identGen = newIdentNode(!("$1Gen" % $(ident)))
+  var generatorName: string
+  var args: seq[NimNode] = @[]
+  var isBuiltin = true
+  var isType = true
+  if expression.kind == nnkIdent:
+    generatorName = $expression
+  elif expression.kind == nnkPrefix and $expression[0] == "!":
+    generatorName = $expression[1]
+    isBuiltin = false
+    isType = false
+  else:
+    if expression[0].kind == nnkPrefix and $expression[0][0] == "!":
+      generatorName = $(expression[0][1])
+      isBuiltin = false
+      isType = false
+    elif expression.kind == nnkBracketExpr and $expression[0] == "seq":
+      generatorName = "Type"
+      args = generateTypeArgs(expression[1], expression[0])
+    else:
+      generatorName = $(expression[0])
+      if generatorName notin BUILTIN_NAMES:
+        isBuiltin = false
+    if len(args) == 0:
+      var z = 0
+      for arg in expression:
+        if z > 0:
+          args.add(arg)
+        inc z
+  result[1] = initTable[string, Table[string, string]]()
+  var newArgs: seq[NimNode] = @[]
+  var otherFields: seq[NimNode] = @[]
+
+  # echo "isType", isType
+  # echo "isBuiltin", isBuiltin
+  # echo "expression", repr(expression)
+  if isType and generatorName != "Type":
+    if isBuiltin:
+      args = concat(@[newIdentNode(!($generatorName))], args)
+    else:
+      result[1][generatorName] = initTable[string, string]()
+      for arg in args:
+        # echo repeat("  ", depth), "hm", repr(arg[1])
+        # echo repeat("  ", depth), "hm", repr(newIdentNode(!("a")))
+        # echo repeat("  ", depth), "hm", treerepr(arg[1])
+        var (argNode, argTable) = generateTweak(arg, newIdentNode(!("$1Field$2" % [$ident, repr(arg[0])])), depth + 1, analyze=analyze)
+        newArgs.add(argNode)
+        # newArgs.add(generateTweak(arg, newIdentNode(!("a")), depth + 1))
+        # echo repeat("  ", depth), "mh", treerepr(newArgs[^1][0][^1])
+        if len(newArgs[^1]) > 1:
+          newArgs[^1] = newArgs[^1][1]
+          # echo result[1][generatorName]
+          assert result[1].hasKey(generatorName)
+          result[1][generatorName][repr(arg[0])] = "$1Field$2Gen" % [$ident, repr(arg[0])]
+          newArgs[^1][0][0][0] = newIdentNode(!(result[1][generatorName][repr(arg[0])]))
+
+      args = @[newIdentNode(!($generatorName))]
+      # args = @[generateTweak(args[0], newIdentNode(!($generatorName)))]
+      # args = concat(@[newIdentNode(!($generatorName))], generateTypeArgs())
+      var generatorNameQuote = newIdentNode(!generatorName)
+      var identQuote = newLit($ident)
+      if analyze:
+        var t = quote:
+          analyzeObject(`generatorNameQuote`, `identQuote`)
+        for label, field in result[1][generatorName]:
+          t.add(newLit(label))
+        newArgs.add(t)
+      # var t: Table[string, string]
+      # (otherFields, t) = analyzeObject(generatorName, result[1][generatorName])
+      # result[1][generatorName] = t
+    generatorName = "Type"
+  var generatorNameNode = newIdentNode(!generatorName)
+  # if generator[1].kind == nnkObjConstr:
+  #   result[0] = quote:
+  #     var `identGen` = ObjectGen()
+  # else:
+  result[0] = quote:
+    var `identGen` = `generatorNameNode`()
+  for arg in args:
+    result[0][0][2].add(arg)
+  result[0] = nnkStmtList.newTree(result[0])
+  for newArg in newArgs:
+    result[0].add(newArg)
+  
 proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNode, NimNode) =
   assert generator.kind == nnkIdentDefs
   var ident = generator[0]
-  var identGen = newIdentNode(!("$1Gen" % $(generator[0])))
+  var identGen = newIdentNode(!("$1Gen" % $(ident)))
   var expression = generator[1]
   if generator[1].kind == nnkPrefix and $generator[1][0] == "!":
     if generator[1][1].kind == nnkCall:
@@ -78,64 +251,32 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
           expression.add(g)
         inc z
   replaceNames(expression, names)
-  var generatorName: string
-  var args: seq[NimNode] = @[]
-  var isBuiltin = true
-  if expression.kind == nnkIdent:
-    generatorName = $expression
-  elif expression.kind == nnkPrefix and $expression[0] == "!":
-    generatorName = $expression[1]
-    isBuiltin = false
-  else:
-    if expression[0].kind == nnkPrefix and $expression[0][0] == "!":
-      generatorName = $(expression[0][1])
-      isBuiltin = false
-    elif expression.kind == nnkBracketExpr and $expression[0] == "seq":
-      generatorName = "Type"
-      var element = expression[1]
-      if element.kind == nnkIdent:
-        var e = quote:
-          Type[`element Gen`]()
-        args = @[e]
-      else:
-        element = element[0]
-        var t = quote:
-          Type(`element`)
-        t = nnkExprEqExpr.newTree(newIdentNode(!"element"), t)
-        args = @[t]
-        var z = 0
-        for x in expression[1]:
-          if z > 0:
-            t[1].add(x)
-          inc z        
-      var a = expression[0]
-      var t = quote:
-        `a`[`element`]
-      args = concat(@[t], args)
-    else:
-      generatorName = $(expression[0])
-    if len(args) == 0:
-      var z = 0
-      for arg in expression:
-        if z > 0:
-          args.add(arg)
-        inc z
-  if isBuiltin and generatorName != "Type":
-    args = concat(@[newIdentNode(!($generatorName))], args)
-    generatorName = "Type"
-  var generatorNameNode = newIdentNode(!generatorName)
-  if generator[1].kind == nnkObjConstr:
-    result[0] = quote:
-      var `identGen` = ObjectGen()
-  else:
-    result[0] = quote:
-      var `identGen` = `generatorNameNode`()
-  for arg in args:
-    result[0][0][2].add(arg)
-  result[1] = quote:
-    var `ident` = `identGen`.generate()
-    `identGen`.last = `ident`
 
+  var fieldTable: Table[string, Table[string, string]]
+  (result[0], fieldTable) = generateTweak(expression, ident)
+
+  if len(fieldTable) == 0:
+    result[1] = quote:
+      var `ident` = `identGen`.generate()
+      `identGen`.last = `ident`
+  else:
+    result[1] = nnkStmtList.newTree()
+    for label, fields in fieldTable:
+      var labelQuote = newIdentNode(!label)
+      var x0 = quote:
+        var `ident` = `labelQuote`()
+      result[1].add(x0)
+      var identString = newLit($ident)
+      var t = quote:
+        analyzeLoop(`labelQuote`, `identString`)
+      for field, fieldGen in fields:
+        var fieldQuote = newIdentNode(!field)
+        var fieldGenQuote = newIdentNode(!fieldGen)
+        var x1 = quote:
+          `ident`.`fieldQuote` = `fieldGenQuote`.generate()
+        result[1].add(x1)
+        t.add(newLit(field))
+      result[1].add(t)
   var s = newLit($generator[0])
   var error = newIdentNode(!"error")
   var add = newIdentNode(!"add")
@@ -196,7 +337,7 @@ proc generateQuicktest*(args: NimNode): NimNode =
   result.add(generatedTest)
 
 type
-  Alphabet* = enum AUndefined, AAll, AAscii, ANone
+  Alphabet* = enum AUndefined, AAll, AAscii, ALatin, ALatinDigit, ANone
 
   Arbitrary*[T] = concept a
     arbitrary(type a) is Gen[T]
@@ -396,6 +537,10 @@ proc Type*[T](
     max: int = 20): SeqGen[T] =
   result = SeqGen[T](element: element, infer: false, limit: LimitMixin[int](min: min, max: max), fil: FilterMixin[seq[T]](test: test, trans: trans), rng: initRng())
 
+proc Type*[T](
+    t: typedesc[T]): Gen[T] =
+  result = Gen[T](rng: initRng())
+
 proc generateInternal*(g: var StringGen): string =
   var chars: seq[char]
   # if g.alphabet == AUndefined:
@@ -411,6 +556,22 @@ proc generateInternal*(g: var StringGen): string =
   of AAscii:
     generator = (number: int) => chr(number)
     limit = 128
+  of ALatin:
+    generator = proc (number: int): char =
+      if number < 26:
+        chr('a'.ord + number)
+      else:
+        chr('A'.ord + number - 26)
+    limit = 52
+  of ALatinDigit:
+    generator = proc (number: int): char =
+      if number < 26:
+        chr('a'.ord + number)
+      elif number < 52:
+        chr('A'.ord + number - 26)
+      else:
+        chr('0'.ord + number - 52)
+    limit = 62
   of ANone, AUndefined:
     generator = (number: int) => chr(number)
     limit = 256

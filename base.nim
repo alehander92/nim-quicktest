@@ -4,22 +4,40 @@ import unittest, quickcheck, strutils, sequtils, future
 type
   MyObject* = ref object
     a*: string
+    b*: int
 
 proc name*(it: MyObject): string =
-  "name_$1_zz" % it.a
+  "name_zz_$1" % it.a
+
+proc `$`*(m: MyObject): string =
+  $(m[])
 
 suite "base":
-  quicktest "encode" do(s: string(min = 0, max = 20), z: int):
-    check(s.encode().decode() == s)
+  # quicktest "encode" do(s: string(min = 0, max = 20), z: int):
+  #   check(s.encode().decode() == s)
 
-  quicktest "lower" do(s: string(alphabet=AAscii, trans=(a) => a.toLowerAscii())):
-    check(s.toUpperAscii().toLowerAscii() == s)
+  # quicktest "lower" do(s: string(alphabet=AAscii, trans=(a) => a.toLowerAscii())):
+  #   check(s.toUpperAscii().toLowerAscii() == s)
 
-  quicktest "boolean" do(b: bool):
-    check((b and b) == (b and b))
+  # quicktest "boolean" do(b: bool):
+  #   check((b and b) == (b and b))
 
-  quicktest "mapIt" do (s: seq[int(min = 0, max = 20)]):
-    check(s.mapIt(it * 822).mapIt(it div 822) == s)
+  # quicktest "mapIt" do (s: seq[int(min = 0, max = 20)]):
+  #   check(s.mapIt(it * 822).mapIt(it div 822) == s)
 
-  # quicktest "object" do (s: MyObject(a = string(max = 50))):
-  #   check(s.name().split('_')[^1] == s.a)
+  # quicktest "object" do (a: string(alphabet=ALatin, max = 20)):
+  #   check(a == a)
+
+  quicktest "object" do (s: MyObject(a = string(alphabet=ALatin, max = 20))):
+    check(s.name().split('_')[^1] == s.a)
+
+  # test "object":
+  #   var sFieldaGen = Type(string, alphabet=ALatin, max = 20)
+  #   var sFieldbGen = Type(int)
+  #   var sGen = Type(MyObject)
+  #   var s = MyObject()
+  #   for z in 0..<50:
+  #     s.a = sFieldaGen.generate()
+  #     s.b = sFieldbGen.generate()
+  #     sGen.last = s
+  #     check(s.name().split('_')[^1] == s.a)

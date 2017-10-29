@@ -14,11 +14,10 @@ quicktest "reverse" do(s: string(symbols={'a'..'z'}, min=0, max=20)):
 ```
 
 ```nim
-  quicktest "object" do (s: MyObject(a = string(max = 50))):
-    check(s.name().split('_')[^1] == s.a)
-```
+  quicktest "object" do (s: MyObject(a = string(alphabet=ALatin, max = 20))):
+	check(s.name().split('_')[^1] == s.a)
 
-(last one unimplemented)
+```
 
 I am trying to balance the power of types with extreme flexibility in tweaking 
 generation for them, combining the haskell quickcheck-like heavy type approach with 
