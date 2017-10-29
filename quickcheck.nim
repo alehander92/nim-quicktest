@@ -43,19 +43,15 @@ macro ObjectGen*(t: typed, args: untyped): untyped =
   var call = args[1][0]
   result = quote:
     echo 0
-  # var gen = nnkExprColonExpr.newTree(
-  #   name,
-
 
 
 macro quicktest*(args: varargs[untyped]): untyped =
-  #echo treerepr(args)
   result = generateQuicktest(args)
   var name = newLit(nameTest(args))
   result = quote:
     test `name`:
       `result`
-  #echo repr(result)
+  # echo repr(result)
 
 proc replaceNames(node: var NimNode, names: seq[string]) =
   var z = 0
@@ -110,7 +106,7 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
         var z = 0
         for x in expression[1]:
           if z > 0:
-            t[1][0].add(x)
+            t[1].add(x)
           inc z        
       var a = expression[0]
       var t = quote:
@@ -165,7 +161,6 @@ proc generateQuicktest*(args: NimNode): NimNode =
     assert args[0].kind == nnkCall
     label = $(args[0][0])
     doNode = args[0][1]
-  # echo label, repr(times)
   var generators = toSeq(doNode[3]).filterIt(it.kind != nnkEmpty)
   # echo treerepr(generators[0])
   # echo treerepr(generators[1])
@@ -448,7 +443,8 @@ proc generateInternal*(g: var BoolGen): bool =
 
 proc generate*[T](g: var WithFilter[T]): T =
   var started = false
-  while not started or not (g.test() == nil or g.test()(result)):
+  # while not started or not (g.test() == nil or g.test()(result)):
+  while not started or not (g.fil.test == nil or g.fil.test(result)):
     started = true
     result = generateInternal(g)
     if g.trans() != nil:
@@ -456,7 +452,8 @@ proc generate*[T](g: var WithFilter[T]): T =
 
 proc generate*[T](g: var SeqGen[T]): seq[T] =
   var started = false
-  while not started or not (g.test() == nil or g.test()(result)):
+  # while not started or not (g.test() == nil or g.test()(result)):
+  while not started or not (g.fil.test == nil or g.fil.test(result)):
     started = true
     result = generateInternal(g)
     if g.fil.trans != nil:
