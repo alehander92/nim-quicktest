@@ -53,7 +53,7 @@ macro quicktest*(args: varargs[untyped]): untyped =
   result = quote:
     test `name`:
       `result`
-  echo repr(result)
+  # echo repr(result)
 
 proc replaceNames(node: var NimNode, names: seq[string]) =
   var z = 0
@@ -96,7 +96,7 @@ proc generateTypeArgs2(expression: NimNode): seq[NimNode] =
     result = @[e]
   else:
     element = element[0]
-    echo repr(expression)
+    # echo repr(expression)
     var t = quote:
       Type(`element`)
     t = nnkExprEqExpr.newTree(newIdentNode(!"element"), t)
@@ -130,7 +130,7 @@ macro analyzeObject(name: typed, gen: string, fields: varargs[string]): untyped 
         nnkCall.newTree(newIdentNode(!repr(v)))),
       newIdentNode(!("$1Field$2" % [$gen, repr(field)])),
       analyze=false)
-    echo treerepr(n)
+    # echo treerepr(n)
     result.add(nnkVarSection.newTree(
       nnkIdentDefs.newTree(
         n[0][0][0],
@@ -148,7 +148,7 @@ macro analyzeLoop(name: typed, gen: string, fields: varargs[string]): untyped =
     var t = quote:
       `genQuote`.`f` = `generator`.generate()
     result.add(t)
-  echo repr(result)
+  # echo repr(result)
 
 let BUILTIN_NAMES = toSet(["string", "int", "float", "bool"])
 
