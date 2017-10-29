@@ -1,2 +1,6 @@
 *.c
 *.o
+node_modules/
+f.nim
+nimcache/
+quickcheck
