@@ -14,8 +14,8 @@ quicktest "reverse" do(s: string(symbols={'a'..'z'}, min=0, max=20)):
 ```
 
 ```nim
-  quicktest "mapIt" do (s: MyObject(a=string(max=50))):
-    check(s.name().split('_')[^1] == a)
+  quicktest "object" do (s: MyObject(a = string(max = 50))):
+    check(s.name().split('_')[^1] == s.a)
 ```
 
 (last one unimplemented)

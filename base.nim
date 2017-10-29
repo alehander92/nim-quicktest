@@ -2,12 +2,11 @@ import base64
 import unittest, quickcheck, strutils, sequtils, future
 
 type
-  A* = ref object
-    b*: int
-    c*: string
+  MyObject* = ref object
+    a*: string
 
-proc a*(it: A): int =
-  it.b
+proc name*(it: MyObject): string =
+  "name_$1_zz" % it.a
 
 suite "base":
   quicktest "encode" do(s: string(min = 0, max = 20), z: int):
@@ -22,7 +21,5 @@ suite "base":
   quicktest "mapIt" do (s: seq[int(min = 0, max = 20)]):
     check(s.mapIt(it * 822).mapIt(it div 822) == s)
 
-  # quicktest "a" do (it: A(b: int(min = 0, max = 5))):
-  #   check(a(it) == it.b)
-  
-  
+  # quicktest "object" do (s: MyObject(a = string(max = 50))):
+  #   check(s.name().split('_')[^1] == s.a)
