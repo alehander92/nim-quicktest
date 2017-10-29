@@ -15,7 +15,8 @@ quicktest "reverse" do(s: string(symbols={'a'..'z'}, min=0, max=20)):
 
 ```nim
   quicktest "object" do (s: MyObject(a = string(alphabet=ALatin, max = 20))):
-	check(s.name().split('_')[^1] == s.a)
+    check(s.name().split('_')[^1] == s.a) # we generate random data for the other fields too
+    # however automated object fields support is still very early
 ```
 
 I am trying to balance the power of types with extreme flexibility in tweaking 
