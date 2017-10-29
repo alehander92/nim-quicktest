@@ -33,6 +33,8 @@ else:
 
 proc generateQuicktest*(args: NimNode): NimNode
 
+proc nameTest*(args: NimNode): string
+
 macro ObjectGen*(t: typed, args: untyped): untyped =
   var typ = getType(t)
   if typ.kind == nnkBracketExpr and typ[1].kind == nnkBracketExpr and $typ[1][0] == "ref":
@@ -47,12 +49,13 @@ macro ObjectGen*(t: typed, args: untyped): untyped =
 
 
 macro quicktest*(args: varargs[untyped]): untyped =
+  #echo treerepr(args)
   result = generateQuicktest(args)
-  var name = args[0]
+  var name = newLit(nameTest(args))
   result = quote:
     test `name`:
       `result`
-  echo repr(result)
+  #echo repr(result)
 
 proc replaceNames(node: var NimNode, names: seq[string]) =
   var z = 0
@@ -143,16 +146,29 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
   result[2] = quote:
     `error`.`add`("[" & `s` & "] " & $(`ident`) & "\n")
 
-proc generateQuicktest*(args: NimNode): NimNode =
-  var label = $args[0]
-  var times = newLit(50)
-  var generators: seq[NimNode]
-  if args[1].kind == nnkIntLit:
-    times = args[1]
-    generators = toSeq(args[2][3])
+proc nameTest*(args: NimNode): string =
+  if args[0].kind == nnkStrLit:
+    return $(args[0])
   else:
-    generators = toSeq(args[1][3])
-  generators.keepItIf(it.kind != nnkEmpty)
+    return $(args[0][0])
+  
+proc generateQuicktest*(args: NimNode): NimNode =
+  var label: string
+  var times = newLit(50)
+  var doNode: NimNode
+  if args[0].kind == nnkStrLit:
+    assert args[1].kind == nnkCall
+    label = $(args[0])
+    times = args[1][0]
+    doNode = args[1][1]
+  else:
+    assert args[0].kind == nnkCall
+    label = $(args[0][0])
+    doNode = args[0][1]
+  # echo label, repr(times)
+  var generators = toSeq(doNode[3]).filterIt(it.kind != nnkEmpty)
+  # echo treerepr(generators[0])
+  # echo treerepr(generators[1])
   var generatorNames = generators.mapIt($it[0])
   var gens = generators.mapIt(generateGenerator(it, generatorNames))
   result = buildMacro:
@@ -175,7 +191,7 @@ proc generateQuicktest*(args: NimNode): NimNode =
   var e = quote:
     `acheckpoint`(`error`)
   checkpoint.add(e)
-  var test = args[^1][^1]
+  var test = doNode[^1]
   var generatedTest = quote:
     for z in 0..<`times`:
       `init`
@@ -387,24 +403,26 @@ proc Type*[T](
 
 proc generateInternal*(g: var StringGen): string =
   var chars: seq[char]
-  if g.alphabet == AUndefined:
-    chars = generateSequence(g.rng, g.symbols, g.min, g.max)
-    result = chars.join()
-  else:
-    var generator: (int) -> char
-    var limit: int
-    case g.alphabet:
-    of AAll:
-      generator = (number: int) => chr(number)
-      limit = 256
-    of AAscii:
-      generator = (number: int) => chr(number)
-      limit = 128
-    of ANone, AUndefined:
-      raise newException(ValueError, "None")
+  # if g.alphabet == AUndefined:
+  #   chars = generateSequence(g.rng, g.symbols, g.min, g.max)
+  #   result = chars.join()
+  # else:
+  var generator: (int) -> char
+  var limit: int
+  case g.alphabet:
+  of AAll:
+    generator = (number: int) => chr(number)
+    limit = 256
+  of AAscii:
+    generator = (number: int) => chr(number)
+    limit = 128
+  of ANone, AUndefined:
+    generator = (number: int) => chr(number)
+    limit = 256
+    # raise newException(ValueError, "None")
 
-    chars = generateSequence(g.rng, generator, limit, g.min, g.max)
-    result = chars.join()
+  chars = generateSequence(g.rng, generator, limit, g.min, g.max)
+  result = chars.join()
 
 proc Inside*(s: StringGen, min: int = 0, max: int = 10): InsideGen =
   result = InsideGen(limit: LimitMixin[int](min: min, max: max), inside: s, rng: initRng())
@@ -455,7 +473,6 @@ proc generateInternal*[T](g: var SeqGen[T]): seq[T] =
   var length = randomIn(g.rng, g.limit.min, g.limit.max)
   result = @[]
   for z in 0..<length:
-    echo z
     if g.infer:
       var t = arbitrary(T)
       result.add(t.generate())
@@ -464,7 +481,7 @@ proc generateInternal*[T](g: var SeqGen[T]): seq[T] =
       result.add(t.generate())
     
 
-echo Type(int, min = 0, max = 20) is IntGen
-echo arbitrary(typedesc[IntGen]) is Gen[int]
+# echo Type(int, min = 0, max = 20) is IntGen
+# echo arbitrary(typedesc[IntGen]) is Gen[int]
 # ok
 # fix the generator
