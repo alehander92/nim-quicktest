@@ -27,4 +27,4 @@ the way more generator-based hypothesis one.
 Basically most of the generation should be automatically composed based on compile time
 type introspection, but you should be able to tweak options for each element of the type
 
-Oh, and it kinda works in node, too
+Oh, and it kinda works in the node js backend too
