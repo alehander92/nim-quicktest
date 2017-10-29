@@ -10,7 +10,7 @@ when not defined(js):
   proc initRng: Engine =
     engine
 
-
+  # hm
 else:
   import jsffi
 
