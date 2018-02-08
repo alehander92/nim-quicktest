@@ -1,4 +1,4 @@
-# nim-quickcheck
+# nim-quicktest
 
 A quickcheck-related and hypothesis-inspired library extremely early phase. (as it's kinda POC)
 

@@ -1,5 +1,5 @@
 import base64
-import unittest, quickcheck, strutils, sequtils, future
+import unittest, quicktest, strutils, sequtils, future
 
 type
   MyObject* = ref object
