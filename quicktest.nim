@@ -1,5 +1,5 @@
-import macros, breeze
-import strutils, sequtils, tables, intsets, sets, future
+import macros, breeze, unittest
+import strutils, sequtils, strformat, tables, intsets, sets, future, json, os, ospaths, marshal
 
 when not defined(js):
   import random.urandom, random.xorshift
@@ -283,12 +283,41 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
   result[2] = quote:
     `error`.`add`("[" & `s` & "] " & $(`ident`) & "\n")
 
+proc serialize*[T](value: T, name: string): JsonNode =
+  %(@[name, $$value])
+
+proc serializeTest*(nodes: varargs[JsonNode]) =
+  let serialized = %*
+    {
+      "args": nodes
+    }
+  let folder = paramStr(1).split(':', 1)[1]
+  let name = "example"
+  createDir(folder / name)
+  var max = -1
+  for kind, path in walkDir(folder / name, relative=true):
+    if path.startsWith("repr_"):
+      let id = path[5..^1].split('.', 1)[0].parseInt
+      if max < id:
+        max = id
+
+  writeFile(folder / name / &"repr_{max + 1}.json", $serialized)
+
 proc nameTest*(args: NimNode): string =
   if args[0].kind == nnkStrLit:
     return $(args[0])
   else:
     return $(args[0][0])
   
+proc toTypename*(node: NimNode): NimNode =
+  if node.kind == nnkIdent:
+    node
+  elif node.kind == nnkCall:
+    node[0]
+  else:
+    echo node.repr
+    node
+
 proc generateQuicktest*(args: NimNode): NimNode =
   var label: string
   var times = newLit(50)
@@ -302,18 +331,18 @@ proc generateQuicktest*(args: NimNode): NimNode =
     assert args[0].kind == nnkCall
     label = $(args[0][0])
     doNode = args[0][1]
-  var generators = toSeq(doNode[3]).filterIt(it.kind != nnkEmpty)
+  let generators = toSeq(doNode[3]).filterIt(it.kind != nnkEmpty)
   # echo treerepr(generators[0])
   # echo treerepr(generators[1])
-  var generatorNames = generators.mapIt($it[0])
-  var gens = generators.mapIt(generateGenerator(it, generatorNames))
+  let generatorNames = generators.mapIt($it[0])
+  let gens = generators.mapIt(generateGenerator(it, generatorNames))
   result = buildMacro:
     stmtList()
   result = result[0]
   var init = buildMacro:
     stmtList()
   init = init[0]
-  var error = newIdentNode(!"error")
+  let error = newIdentNode(!"error")
   var checkpoint = quote:
     var `error` = "values:\n"
 
@@ -322,19 +351,57 @@ proc generateQuicktest*(args: NimNode): NimNode =
     result.add(gen[0])
     init.add(gen[1])
     checkpoint.add(gen[2])
-
-  var acheckpoint = newIdentNode(!"checkpoint")
-  var e = quote:
+  
+  let test = doNode[^1]
+  let acheckpoint = newIdentNode(!"checkpoint")
+  let e = quote:
     `acheckpoint`(`error`)
   checkpoint.add(e)
-  var test = doNode[^1]
-  var generatedTest = quote:
+
+  var deserializations = nnkStmtList.newTree()
+  for z, name in generatorNames:
+    let typename = toTypename(generators[z][1])
+    let nameNode = ident(name)  
+    let deserialization = quote:
+      var `nameNode` = marshal.to[`typename`](args[`z`][1].getStr())
+    deserializations.add(deserialization)
+
+  let reprCode = quote:
+    let path = paramStr(1)[5..^1]
+    let serialized = readFile(path)
+    let args {.inject.} = serialized.parseJson{"args"}
+    `deserializations`
+    `checkpoint`
+    `test`
+
+  var serialize = nnkCall.newTree(ident("serializeTest"))
+  for name in generatorNames:
+    serialize.add(nnkCall.newTree(ident("serialize"), ident(name), newLit(name)))
+
+  var generatedElse = quote:
+    var successCount = 0
     for z in 0..<`times`:
       `init`
       `checkpoint`
       `test`
-
+      if paramCount() > 0 and paramStr(1).startsWith("save:"):
+        case testStatusIMPL:
+        of FAILED:
+          `serialize`
+        of OK:
+          if successCount == 0:
+            `serialize`
+            successCount = 0
+          successCount += 1
+        else:
+          discard
+  let generatedTest = quote:
+    if paramCount() > 0 and paramStr(1).startsWith("repr:"):
+      `reprCode`
+    else:
+      `generatedElse`
   result.add(generatedTest)
+  echo result.repr
 
 type
   Alphabet* = enum AUndefined, AAll, AAscii, ALatin, ALatinDigit, ANone
@@ -638,8 +705,12 @@ proc generateInternal*[T](g: var SeqGen[T]): seq[T] =
       var t = cast[type(arbitrary(T))](g.element) # are you fucking kidding me
       result.add(t.generate())
     
+when declared(disableParamFiltering):
+  disableParamFiltering()
 
 # echo Type(int, min = 0, max = 20) is IntGen
 # echo arbitrary(typedesc[IntGen]) is Gen[int]
 # ok
 # fix the generator
+
+export json

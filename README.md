@@ -81,6 +81,14 @@ I've once implemented automated tracker issue creation from failing tests.
 
 Eventually I'll add the feature to save all failing tests as normal test examples inspired by hypothesis.
 
+## reproducability
+
+Currently we have initial support for save
+
+If you run `./testname save:testsdir/` we will save each 10th succesfull and each fail arg set in `testsdir/testname/repr_id.json`
+
+Then you can run it again using `./testname repr:testsdir/testname/repr_id.json`
+
 ## how stable
 
 I use it for my projects and it works well for them, but I know the limitations, so it's probably very
