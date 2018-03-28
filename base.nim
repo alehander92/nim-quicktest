@@ -1,6 +1,9 @@
 import base64
 import unittest, quicktest, strutils, sequtils, future, sets
 
+when defined(js):
+  import js_lib
+
 type
   MyObject* = ref object
     a*: string
@@ -15,7 +18,7 @@ proc `$`*(m: MyObject): string =
 suite "base":
   quicktest "encode", 2 do(s: string(min = 0, max = 20), z: int):
     check(s.encode().decode() == s)
-
+    
   # quicktest "lower" do(s: string(alphabet=AAscii, trans=(a) => a.toLowerAscii())):
   #   check(s.toUpperAscii().toLowerAscii() == s)
 

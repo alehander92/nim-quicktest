@@ -1,8 +1,8 @@
 import macros, breeze, unittest
-import strutils, sequtils, strformat, tables, intsets, sets, future, json, os, ospaths, marshal
+import strutils, sequtils, strformat, tables, intsets, sets, future, json
 
 when not defined(js):
-  import random.urandom, random.xorshift
+  import random.urandom, random.xorshift, os, ospaths, marshal
 
   type
     Engine = SystemRandom
@@ -12,7 +12,7 @@ when not defined(js):
 
   # hm
 else:
-  import jsffi
+  import jsffi, js_lib
 
   type
     Engine* = ref object of js
@@ -258,7 +258,7 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
   if len(fieldTable) == 0:
     result[1] = quote:
       var `ident` = `identGen`.generate()
-      `identGen`.last = `ident`
+      `identGen`.setLast(`ident`)
   else:
     result[1] = nnkStmtList.newTree()
     for label, fields in fieldTable:
@@ -286,13 +286,13 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
 proc serialize*[T](value: T, name: string): JsonNode =
   %(@[name, $$value])
 
-proc serializeTest*(nodes: varargs[JsonNode]) =
+proc serializeTest*(sourcePath: string, nodes: varargs[JsonNode]) =
   let serialized = %*
     {
       "args": nodes
     }
   let folder = paramStr(1).split(':', 1)[1]
-  let name = "example"
+  let name = sourcePath.rsplit("/", 1)[1].rsplit(".", 1)[0] # TODO js
   createDir(folder / name)
   var max = -1
   for kind, path in walkDir(folder / name, relative=true):
@@ -301,6 +301,8 @@ proc serializeTest*(nodes: varargs[JsonNode]) =
       if max < id:
         max = id
 
+  # echo max
+  # echo &"repr_{max + 1}.json"
   writeFile(folder / name / &"repr_{max + 1}.json", $serialized)
 
 proc nameTest*(args: NimNode): string =
@@ -358,12 +360,17 @@ proc generateQuicktest*(args: NimNode): NimNode =
     `acheckpoint`(`error`)
   checkpoint.add(e)
 
+
   var deserializations = nnkStmtList.newTree()
   for z, name in generatorNames:
     let typename = toTypename(generators[z][1])
-    let nameNode = ident(name)  
-    let deserialization = quote:
-      var `nameNode` = marshal.to[`typename`](args[`z`][1].getStr())
+    let nameNode = ident(name)
+    when not defined(js):
+      let deserialization = quote:
+        var `nameNode` = marshal.to[`typename`](args[`z`][1].getStr())
+    else:
+      let deserialization = quote:
+        var `nameNode` = js_lib.to[`typename`](args[`z`][1].getStr())
     deserializations.add(deserialization)
 
   let reprCode = quote:
@@ -374,7 +381,7 @@ proc generateQuicktest*(args: NimNode): NimNode =
     `checkpoint`
     `test`
 
-  var serialize = nnkCall.newTree(ident("serializeTest"))
+  var serialize = nnkCall.newTree(ident("serializeTest"), ident("currentSourcePath"))
   for name in generatorNames:
     serialize.add(nnkCall.newTree(ident("serialize"), ident(name), newLit(name)))
 
@@ -401,7 +408,7 @@ proc generateQuicktest*(args: NimNode): NimNode =
     else:
       `generatedElse`
   result.add(generatedTest)
-  echo result.repr
+  # echo result.repr
 
 type
   Alphabet* = enum AUndefined, AAll, AAscii, ALatin, ALatinDigit, ANone
@@ -456,11 +463,14 @@ type
     for element in a:
       element is T
 
-  WithLimit[T] = concept a
+  WithLimit*[T] = concept a
     a.limit is LimitMixin[T]
 
-  WithFilter[T] = concept a
+  WithFilter*[T] = concept a
     a.fil is FilterMixin[T]
+
+proc setLast*[T](a: Gen[T], value: T) =
+  a.last = value
 
 proc min[T](a: WithLimit[T]): T =
   a.limit.min
@@ -675,8 +685,8 @@ proc generate*[T](g: var WithFilter[T]): T =
   while not started or not (g.fil.test == nil or g.fil.test(result)):
     started = true
     result = generateInternal(g)
-    if g.trans() != nil:
-      result = g.trans()(result)
+    if g.fil.trans != nil:
+      result = g.fil.trans(result)
 
 proc generate*[T](g: var SeqGen[T]): seq[T] =
   var started = false
@@ -714,3 +724,6 @@ when declared(disableParamFiltering):
 # fix the generator
 
 export json
+when defined(js):
+  export js_lib
+
