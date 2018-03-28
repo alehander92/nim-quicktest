@@ -1,4 +1,4 @@
-version         = "0.0.7"
+version         = "0.0.8"
 packageName     = "quicktest"
 author          = "Alexander Ivanov"
 description     = "property testing"

@@ -286,10 +286,11 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
 proc serialize*[T](value: T, name: string): JsonNode =
   %(@[name, $$value])
 
-proc serializeTest*(sourcePath: string, nodes: varargs[JsonNode]) =
+proc serializeTest*(sourcePath: string, success: bool, nodes: varargs[JsonNode]) =
   let serialized = %*
     {
-      "args": nodes
+      "args": nodes,
+      "success": success
     }
   let folder = paramStr(1).split(':', 1)[1]
   let name = sourcePath.rsplit("/", 1)[1].rsplit(".", 1)[0] # TODO js
@@ -301,8 +302,6 @@ proc serializeTest*(sourcePath: string, nodes: varargs[JsonNode]) =
       if max < id:
         max = id
 
-  # echo max
-  # echo &"repr_{max + 1}.json"
   writeFile(folder / name / &"repr_{max + 1}.json", $serialized)
 
 proc nameTest*(args: NimNode): string =
@@ -381,9 +380,19 @@ proc generateQuicktest*(args: NimNode): NimNode =
     `checkpoint`
     `test`
 
-  var serialize = nnkCall.newTree(ident("serializeTest"), ident("currentSourcePath"))
+  var serialize = nnkCall.newTree(
+    ident("serializeTest"),
+    ident("currentSourcePath"),
+    nnkInfix.newTree(
+      ident("=="),
+      ident("testStatusIMPL"),
+      ident("OK")))
   for name in generatorNames:
-    serialize.add(nnkCall.newTree(ident("serialize"), ident(name), newLit(name)))
+    serialize.add(
+      nnkCall.newTree(
+        ident("serialize"),
+        ident(name),
+        newLit(name)))
 
   var generatedElse = quote:
     var successCount = 0
