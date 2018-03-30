@@ -315,6 +315,8 @@ proc toTypename*(node: NimNode): NimNode =
     node
   elif node.kind == nnkCall:
     node[0]
+  elif node.kind == nnkPrefix:
+    ident(&"{node[1][0]}Obj")
   else:
     echo node.repr
     node
@@ -417,7 +419,7 @@ proc generateQuicktest*(args: NimNode): NimNode =
     else:
       `generatedElse`
   result.add(generatedTest)
-  # echo result.repr
+  echo result.repr
 
 type
   Alphabet* = enum AUndefined, AAll, AAscii, ALatin, ALatinDigit, ANone
