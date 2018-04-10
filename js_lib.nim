@@ -11,7 +11,7 @@ type
 
   ReadDirEffect = object of ReadIOEffect
 
-  FS = ref object
+  FS* = ref object
     readFileSync*: proc(path: cstring, options: js): cstring
     writeFileSync*: proc(path: cstring, raw: cstring, options: js)
     mkdirSync*: proc(path: cstring) {.tags: [WriteDirEffect].}
@@ -33,7 +33,7 @@ type
 
 var require {.importc.}: proc(lib: cstring): js
 var JSON {.importc.}: JSONLib
-var fs = cast[FS](require("fs"))
+var fs* = cast[FS](require("fs"))
 var process {.importc.}: Process
 var path = cast[Path](require("path"))
 
@@ -68,5 +68,3 @@ iterator walkDir*(path: string, relative: bool = false): tuple[kind: PathCompone
 
 proc `/`*(left: string, right: string): string =
   $(path.join(cstring(left), cstring(right)))
-
-
