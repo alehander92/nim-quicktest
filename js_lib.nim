@@ -1,8 +1,6 @@
 import jsffi, async, strutils, sequtils, strformat, macros, json
 
 type
-  js* = JsObject
-
   JSONLib = ref object
     stringify: proc(c: js): cstring
     parse: proc(c: cstring): js
@@ -68,3 +66,5 @@ iterator walkDir*(path: string, relative: bool = false): tuple[kind: PathCompone
 
 proc `/`*(left: string, right: string): string =
   $(path.join(cstring(left), cstring(right)))
+
+template `$`*(o: JsObject): cstring = cast[cstring](o.toString())
