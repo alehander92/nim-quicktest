@@ -31,20 +31,45 @@ else:
     engine
 
 
+const EMPTY_RANGE = 0 .. -1
+
+
+macro genTo(t: untyped): untyped =
+  let to = ident"to"
+  let i = ident"i"
+  let other = ident"other"
+  result = quote:
+    proc `to*`(`i`: int, `other`: type `t`): `t` =
+      `t`(`i`)
+  # echo result.repr
+
+
+genTo(int)
+genTo(int8)
+genTo(int16)
+genTo(int32)
+genTo(int64)
+genTo(uint)
+genTo(uint8)
+genTo(uint16)
+genTo(uint32)
+genTo(uint64)
+
+
 proc generateQuicktest*(args: NimNode): NimNode
 
 proc nameTest*(args: NimNode): string
 
 proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze: bool = true): (NimNode, Table[string, Table[string, string]])
 
-macro ObjectGen*(t: typed, args: untyped): untyped =
-  var typ = getType(t)
-  if typ.kind == nnkBracketExpr and typ[1].kind == nnkBracketExpr and $typ[1][0] == "ref":
-    typ = getType(typ[1][1])
-  var name = args[0]
-  var call = args[1][0]
-  result = quote:
-    echo 0
+# macro ObjectGen*(t: typed, args: untyped): untyped =
+#   var typ = getType(t)
+#   if typ.kind == nnkBracketExpr and typ[1].kind == nnkBracketExpr and $typ[1][0] == "ref":
+#     typ = getType(typ[1][1])
+#   var name = args[0]
+#   var call = args[1][0]
+#   result = quote:
+#     echo 0
 
 
 macro quicktest*(args: varargs[untyped]): untyped =
@@ -150,7 +175,7 @@ macro analyzeLoop(name: typed, gen: string, fields: varargs[string]): untyped =
     result.add(t)
   # echo repr(result)
 
-let BUILTIN_NAMES = toSet(["string", "int", "float", "bool"])
+let BUILTIN_NAMES = toSet(["string", "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "float", "bool"])
 
 proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze: bool = true): (NimNode, Table[string, Table[string, string]]) =
   var identGen = newIdentNode(!("$1Gen" % $(ident)))
@@ -197,7 +222,6 @@ proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze:
       for arg in args:
         # echo repeat("  ", depth), "hm", repr(arg[1])
         # echo repeat("  ", depth), "hm", repr(newIdentNode(!("a")))
-        # echo repeat("  ", depth), "hm", treerepr(arg[1])
         var (argNode, argTable) = generateTweak(arg, newIdentNode(!("$1Field$2" % [$ident, repr(arg[0])])), depth + 1, analyze=analyze)
         newArgs.add(argNode)
         # newArgs.add(generateTweak(arg, newIdentNode(!("a")), depth + 1))
@@ -318,7 +342,7 @@ proc toTypename*(node: NimNode): NimNode =
   elif node.kind == nnkPrefix:
     ident(&"{node[1][0]}Obj")
   else:
-    echo node.repr
+    # echo node.repr
     node
 
 proc generateQuicktest*(args: NimNode): NimNode =
@@ -379,7 +403,7 @@ proc generateQuicktest*(args: NimNode): NimNode =
     let serialized = readFile(path)
     let args {.inject.} = serialized.parseJson{"args"}
     `deserializations`
-    `checkpoint`
+    # `checkpoint`
     `test`
 
   var serialize = nnkCall.newTree(
@@ -400,7 +424,7 @@ proc generateQuicktest*(args: NimNode): NimNode =
     var successCount = 0
     for z in 0..<`times`:
       `init`
-      `checkpoint`
+      # `checkpoint`
       `test`
       if paramCount() > 0 and paramStr(1).startsWith("save:"):
         case testStatusIMPL:
@@ -419,7 +443,8 @@ proc generateQuicktest*(args: NimNode): NimNode =
     else:
       `generatedElse`
   result.add(generatedTest)
-  echo result.repr
+  # echo result.repr
+
 
 type
   Alphabet* = enum AUndefined, AAll, AAscii, ALatin, ALatinDigit, ANone
@@ -469,6 +494,19 @@ type
     limit*:     LimitMixin[int]
     skip*:      IntSet
 
+  NumberGen*[T] = ref object of Gen[T]
+    limit*:     LimitMixin[T]
+
+  SomeNumber = concept a, type T
+    a.int       is int
+    int.to(type T)   is T
+
+
+
+# proc to2[T: SomeNumber](i: int, other: type T): T =
+#   i.to(other)
+
+
 type
   Iterator[T] = concept a
     for element in a:
@@ -513,6 +551,9 @@ proc arbitrary*(t: typedesc[float]): FloatGen =
 proc arbitrary*[T](t: typedesc[seq[T]]): SeqGen[T] =
   SeqGen[T]()
 
+proc arbitrary*[T: SomeNumber](t: typedesc[T]): NumberGen[T] =
+  NumberGen[T]()
+
 proc arbitrary*(t: typedesc[IntGen]): IntGen =
   IntGen()
 
@@ -531,6 +572,8 @@ proc arbitrary*(t: typedesc[FloatGen]): FloatGen =
 proc arbitrary*[T](t: typedesc[SeqGen[T]]): SeqGen[T] =
   SeqGen[T]()
 
+proc arbitrary*[T](t: typedesc[NumberGen[T]]): NumberGen[T] =
+  NumberGen[T]()
 
 proc randomIn*(rng: var Engine, min: int, max: int): int =
   if min == low(int):
@@ -558,11 +601,50 @@ proc generateSequence*[T](rng: var Engine, generator: (int) -> T, limit: int, mi
     var number = randomInt(rng, limit)
     result.add(generator(number))
 
-proc String*(symbols: set[char], test: (string) -> bool = nil, trans: (string) -> string = nil, min: int = 0, max: int = 20): StringGen =
-  result = StringGen(limit: LimitMixin[int](min: min, max: max), fil: FilterMixin[string](test: test, trans: trans), symbols: toSeq(symbols), alphabet: AUndefined, last: "", rng: initRng())
 
-proc String*(alphabet: Alphabet = AAll, min: int = 0, max: int = 20): StringGen =
-  result = StringGen(limit: LimitMixin[int](min: min, max: max), fil: FilterMixin[string](test: nil, trans: nil), alphabet: alphabet, last: "", rng: initRng())
+proc loadRange[T: SomeNumber](min: T, max: T, range: Slice[T]): (T, T) =
+  var minResult = min
+  var maxResult = max
+  if range.a.int != EMPTY_RANGE.a and range.b.int != EMPTY_RANGE.b:
+    minResult = range.a
+    maxResult = range.b
+  return (minResult, maxResult)
+
+
+
+# why do we need those if we have Type
+proc String*(
+    symbols: set[char],
+    test: (string) -> bool = nil,
+    trans: (string) -> string = nil,
+    min: int = 0,
+    max: int = 20,
+    range: Slice[int] = EMPTY_RANGE): StringGen =
+  
+  let (minArg, maxArg) = loadRange(min, max, range)
+  result = StringGen(
+    limit: LimitMixin[int](min: minArg, max: maxArg),
+    fil: FilterMixin[string](test: test, trans: trans),
+    symbols: toSeq(symbols),
+    alphabet: AUndefined,
+    last: "",
+    rng: initRng())
+
+
+proc String*(
+    alphabet: Alphabet = AAll,
+    min: int = 0,
+    max: int = 20,
+    range: Slice[int] = EMPTY_RANGE): StringGen =
+  
+  let (minArg, maxArg) = loadRange(min, max, range)
+  result = StringGen(
+    limit: LimitMixin[int](min: minArg, max: maxArg),
+    fil: FilterMixin[string](test: nil, trans: nil),
+    alphabet: alphabet,
+    last: "",
+    rng: initRng())
+
 
 
 proc uniq(skip: seq[int]): IntSet =
@@ -570,50 +652,86 @@ proc uniq(skip: seq[int]): IntSet =
   for s in skip:
     result.incl(s)
 
+
 proc Type*(
     t: typedesc[string],
     test: (string) -> bool = nil,
     trans: (string) -> string = nil,
     min: int = 0,
     max: int = 20,
+    range: Slice[int] = EMPTY_RANGE,
     alphabet: Alphabet = AUndefined): StringGen =
-  result = StringGen(limit: LimitMixin[int](min: min, max: max), fil: FilterMixin[string](test: test, trans: trans), alphabet: alphabet, last: "", rng: initRng())
+  
+  let (minArg, maxArg) = loadRange(min, max, range)
+  result = StringGen(
+    limit: LimitMixin[int](min: minArg, max: maxArg),
+    fil: FilterMixin[string](test: test, trans: trans),
+    alphabet: alphabet,
+    last: "",
+    rng: initRng())
+
 
 proc Type*(
     t: typedesc[int],
     test: (int) -> bool = nil,
     trans: (int) -> int = nil,
     min: int = 0,
-    max: int = 20): IntGen =
-  result = IntGen(limit: LimitMixin[int](min: min, max: max), fil: FilterMixin[int](test: test, trans: trans), skip: uniq(@[]), rng: initRng())
+    max: int = 20,
+    range: Slice[int] = EMPTY_RANGE): IntGen =
+
+  let (minArg, maxArg) = loadRange(min, max, range)
+  result = IntGen(
+    limit: LimitMixin[int](min: minArg, max: maxArg),
+    fil: FilterMixin[int](test: test, trans: trans),
+    skip: uniq(@[]),
+    rng: initRng())
+
 
 proc Type*(
     t: typedesc[bool],
     test: (bool) -> bool = nil,
     trans: (bool) -> bool = nil): BoolGen =
+
   result = BoolGen(fil: FilterMixin[bool](test: test, trans: trans), rng: initRng())
+
 
 proc Type*(
     t: typedesc[char],
     test: (char) -> bool = nil,
     trans: (char) -> char = nil): CharGen =
+
   result = CharGen(fil: FilterMixin[char](test: test, trans: trans), rng: initRng())
 
+
+# range for float is not a good fit
 proc Type*(
     t: typedesc[float],
     test: (float) -> bool = nil,
     trans: (float) -> float = nil,
     min: float = 0.0,
     max: float = 20.0): FloatGen =
-  result = FloatGen(limit: LimitMixin[float](min: min, max: max), fil: FilterMixin[float](test: test, trans: trans), rng: initRng())
+  
+  result = FloatGen(
+    limit: LimitMixin[float](min: min, max: max),
+    fil: FilterMixin[float](test: test, trans: trans),
+    rng: initRng())
+
 
 proc Type*[T](
     t: typedesc[seq[T]],
     test: (seq[T]) -> bool = nil,
     trans: (seq[T]) -> seq[T] = nil,
     min: int = 0,
-    max: int = 20): SeqGen[T] =
-  result = SeqGen[T](element: arbitrary(T), infer: true, limit: LimitMixin[int](min: min, max: max), fil: FilterMixin[seq[T]](test: test, trans: trans), rng: initRng())
+    max: int = 20,
+    range: Slice[int] = EMPTY_RANGE): SeqGen[T] =
+  
+  let (minArg, maxArg) = loadRange(min, max, range)
+  result = SeqGen[T](
+    element: arbitrary(T),
+    infer: true,
+    limit: LimitMixin[int](min: minArg, max: maxArg),
+    fil: FilterMixin[seq[T]](test: test, trans: trans),
+    rng: initRng())
 
 
 proc Type*[T](
@@ -622,12 +740,38 @@ proc Type*[T](
     test: (seq[T]) -> bool = nil,
     trans: (seq[T]) -> seq[T] = nil,
     min: int = 0,
-    max: int = 20): SeqGen[T] =
-  result = SeqGen[T](element: element, infer: false, limit: LimitMixin[int](min: min, max: max), fil: FilterMixin[seq[T]](test: test, trans: trans), rng: initRng())
+    max: int = 20,
+    range: Slice[int] = EMPTY_RANGE): SeqGen[T] =
+  
+  let (minArg, maxArg) = loadRange(min, max, range)
+  result = SeqGen[T](
+    element: element,
+    infer: false,
+    limit: LimitMixin[int](min: minArg, max: maxArg),
+    fil: FilterMixin[seq[T]](test: test, trans: trans),
+    rng: initRng())
+
+
+proc Type*[T: SomeNumber](
+    t: typedesc[T],
+    # test: (T) -> bool = nil,
+    # trans: (T) -> int = nil,
+    min: T = 0,
+    max: T = 20,
+    range: Slice[int] = EMPTY_RANGE): NumberGen[T] =
+  
+  let tRange = HSlice[T, T](a: range.a.to(T), b: range.b.to(T))
+  let (minArg, maxArg) = loadRange(min, max, tRange)
+  result = NumberGen[T](
+    limit: LimitMixin[T](min: minArg, max: maxArg),
+    fil: FilterMixin[T](), #test: test, trans: trans),
+    rng: initRng())
+
 
 proc Type*[T](
     t: typedesc[T]): Gen[T] =
   result = Gen[T](rng: initRng())
+
 
 proc generateInternal*(g: var StringGen): string =
   var chars: seq[char]
@@ -678,8 +822,19 @@ proc generateInternal*(g: var InsideGen): string =
   if len(result) < g.min:
     result.add(repeat(" ", g.min - len(result)))
 
-proc Int*(min: int = low(int), max: int = high(int), skip: seq[int] = @[]): IntGen =
-  result = IntGen(limit: LimitMixin[int](min: min, max: max), skip: uniq(skip), rng: initRng())
+
+proc Int*(
+    min: int = low(int),
+    max: int = high(int),
+    range: Slice[int] = EMPTY_RANGE,
+    skip: seq[int] = @[]): IntGen =
+  
+  let (minArg, maxArg) = loadRange(min, max, range)
+  result = IntGen(
+    limit: LimitMixin[int](min: minArg, max: maxArg),
+    skip: uniq(skip),
+    rng: initRng())
+
 
 proc generateInternal*(g: var IntGen): int =
   var started = false
@@ -725,12 +880,15 @@ proc generateInternal*[T](g: var SeqGen[T]): seq[T] =
     else:
       var t = cast[type(arbitrary(T))](g.element) # are you fucking kidding me
       result.add(t.generate())
+
     
+proc generateInternal*[T](g: var NumberGen[T]): T =
+  result = randomIn(g.rng, g.limit.min.int, g.limit.max.int).to(T)
+
+
 when declared(disableParamFiltering):
   disableParamFiltering()
 
-# echo Type(int, min = 0, max = 20) is IntGen
-# echo arbitrary(typedesc[IntGen]) is Gen[int]
 # ok
 # fix the generator
 
