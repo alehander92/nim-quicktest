@@ -316,8 +316,7 @@ proc serializeTest*(sourcePath: string, success: bool, nodes: varargs[JsonNode])
       "success": success
     }
   let folder = saveOption
-  let name = sourcePath.rsplit("/", 1)[1].rsplit(".", 1)[0] # TODO js
-  echo currentSourcePath
+  let name = paramStr(0).rsplit("/", 1)[1].rsplit(".", 1)[0] # TODO js
   createDir(folder / name)
   var max = -1
   for kind, path in walkDir(folder / name, relative=true):

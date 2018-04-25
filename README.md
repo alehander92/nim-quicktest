@@ -29,7 +29,7 @@ type introspection, but you should be able to tweak options for each element of 
 ## option
 
 ```bash
-save:folder # saves in folder subfolder with json reproductions, currently a bug, so subfolder always quicktest
+save:folder # saves in folder subfolder with json reproductions
 repr:path # reproduces json save
 -f / --fail-fast # fails after first error
 ```

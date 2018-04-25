@@ -35,6 +35,9 @@ var fs* = cast[FS](require("fs"))
 var process {.importc.}: Process
 var path = cast[Path](require("path"))
 
+proc `$`*(a: SomeUnsignedInt): string =
+  $(a.int)
+
 proc `$$`*[T](e: T): string =
   $JSON.stringify(cast[js](e))
 
