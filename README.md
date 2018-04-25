@@ -26,16 +26,24 @@ the way more generator-based hypothesis one.
 Basically most of the generation should be automatically composed based on compile time
 type introspection, but you should be able to tweak options for each element of the type
 
-## how it works
+## option
 
-Obviously it's all macros expanding other macros and stuff
+```bash
+save:folder # saves in folder subfolder with json reproductions, currently a bug, so subfolder always quicktest
+repr:path # reproduces json save
+-f / --fail-fast # fails after first error
+```
+
+## how does it work
+
+Obviously it's all macros expanding other macros and weird stuff.
 
 You can reuse builtin type names most of the type and also refine them with some filters, e.g.
 `string(alphabet = ALatin)` generates strings with latin letters, `seq[int(max = 2)]` generates seq-s with values max 2
 
-It should be possible to compose those easily (and eventually I might add the posibility to define your own custom filters)
+It should be possible to compose those easily. You can also define your own matchers.
 
-Better documentation coming
+Better documentation coming.
 
 ## custom generation
 

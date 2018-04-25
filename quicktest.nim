@@ -32,7 +32,9 @@ else:
 
 
 const EMPTY_RANGE = 0 .. -1
-
+var failFastOption* = false
+var saveOption* = ""
+var reprOption* = ""
 
 macro genTo(t: untyped): untyped =
   let to = ident"to"
@@ -54,7 +56,6 @@ genTo(uint8)
 genTo(uint16)
 genTo(uint32)
 genTo(uint64)
-
 
 proc generateQuicktest*(args: NimNode): NimNode
 
@@ -78,7 +79,7 @@ macro quicktest*(args: varargs[untyped]): untyped =
   result = quote:
     test `name`:
       `result`
-  # echo repr(result)
+  echo repr(result)
 
 proc replaceNames(node: var NimNode, names: seq[string]) =
   var z = 0
@@ -86,7 +87,7 @@ proc replaceNames(node: var NimNode, names: seq[string]) =
     var son = node[z]
     if son.kind in {nnkSym, nnkIdent}:
       if $son in names:
-        node[z] = newIdentNode(!("$1Gen" % $son))
+        node[z] = ident("$1Gen" % $son)
     else:
       replaceNames(son, names)
     inc z
@@ -101,7 +102,7 @@ proc generateTypeArgs(expression: NimNode, base: NimNode): seq[NimNode] =
     element = element[0]
     var t = quote:
       Type(`element`)
-    t = nnkExprEqExpr.newTree(newIdentNode(!"element"), t)
+    t = nnkExprEqExpr.newTree(ident"element", t)
     result = @[t]
     var z = 0
     for x in expression:
@@ -113,24 +114,24 @@ proc generateTypeArgs(expression: NimNode, base: NimNode): seq[NimNode] =
     `a`[`element`]
   result = concat(@[t2], result)
 
-proc generateTypeArgs2(expression: NimNode): seq[NimNode] =
-  var element = expression
-  if element.kind == nnkIdent:
-    var e = quote:
-      Type[`element Gen`]()
-    result = @[e]
-  else:
-    element = element[0]
-    # echo repr(expression)
-    var t = quote:
-      Type(`element`)
-    t = nnkExprEqExpr.newTree(newIdentNode(!"element"), t)
-    result = @[t]
-    var z = 0
-    for x in expression:
-      if z > 0:
-        t[1].add(x)
-      inc z        
+# proc generateTypeArgs2(expression: NimNode): seq[NimNode] =
+#   var element = expression
+#   if element.kind == nnkIdent:
+#     var e = quote:
+#       Type[`element Gen`]()
+#     result = @[e]
+#   else:
+#     element = element[0]
+#     # echo repr(expression)
+#     var t = quote:
+#       Type(`element`)
+#     t = nnkExprEqExpr.newTree(ident"element", t)
+#     result = @[t]
+#     var z = 0
+#     for x in expression:
+#       if z > 0:
+#         t[1].add(x)
+#       inc z        
 
 proc analyzeInternal(name: NimNode, fields: NimNode): seq[NimNode] =
   var x = getType(name)
@@ -149,11 +150,11 @@ macro analyzeObject(name: typed, gen: string, fields: varargs[string]): untyped 
   result = nnkStmtList.newTree()
   for field in internal:
     var v = getType(field)
-    var (n, t) = generateTweak(
+    var (n, _) = generateTweak(
       nnkExprEqExpr.newTree(
-        newIdentNode(!repr(field)),
-        nnkCall.newTree(newIdentNode(!repr(v)))),
-      newIdentNode(!("$1Field$2" % [$gen, repr(field)])),
+        ident(field.repr),
+        nnkCall.newTree(ident(v.repr))),
+      ident("$1Field$2" % [$gen, repr(field)]),
       analyze=false)
     # echo treerepr(n)
     result.add(nnkVarSection.newTree(
@@ -166,10 +167,10 @@ macro analyzeLoop(name: typed, gen: string, fields: varargs[string]): untyped =
   var internal = analyzeInternal(name, fields)
   result = nnkStmtList.newTree()
   for field in internal:
-    var v = getType(field)
-    var genQuote = newIdentNode(!($gen))
-    var f = newIdentNode(!repr(field))
-    var generator = newIdentNode(!("$1Field$2Gen" % [$gen, repr(field)]))
+    # var v = getType(field)
+    var genQuote = ident($gen)
+    var f = ident(field.repr)
+    var generator = ident("$1Field$2Gen" % [$gen, repr(field)])
     var t = quote:
       `genQuote`.`f` = `generator`.generate()
     result.add(t)
@@ -178,7 +179,7 @@ macro analyzeLoop(name: typed, gen: string, fields: varargs[string]): untyped =
 let BUILTIN_NAMES = toSet(["string", "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "float", "bool"])
 
 proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze: bool = true): (NimNode, Table[string, Table[string, string]]) =
-  var identGen = newIdentNode(!("$1Gen" % $(ident)))
+  var identGen = ident("$1Gen" % $(ident))
   var generatorName: string
   var args: seq[NimNode] = @[]
   var isBuiltin = true
@@ -209,34 +210,32 @@ proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze:
         inc z
   result[1] = initTable[string, Table[string, string]]()
   var newArgs: seq[NimNode] = @[]
-  var otherFields: seq[NimNode] = @[]
+  # var otherFields: seq[NimNode] = @[]
 
   # echo "isType", isType
   # echo "isBuiltin", isBuiltin
   # echo "expression", repr(expression)
   if isType and generatorName != "Type":
     if isBuiltin:
-      args = concat(@[newIdentNode(!($generatorName))], args)
+      args = concat(@[ident($generatorName)], args)
     else:
       result[1][generatorName] = initTable[string, string]()
       for arg in args:
         # echo repeat("  ", depth), "hm", repr(arg[1])
         # echo repeat("  ", depth), "hm", repr(newIdentNode(!("a")))
-        var (argNode, argTable) = generateTweak(arg, newIdentNode(!("$1Field$2" % [$ident, repr(arg[0])])), depth + 1, analyze=analyze)
+        var (argNode, _) = generateTweak(arg, ident("$1Field$2" % [$ident, repr(arg[0])]), depth + 1, analyze=analyze)
         newArgs.add(argNode)
-        # newArgs.add(generateTweak(arg, newIdentNode(!("a")), depth + 1))
+        # newArgs.add(generateTweak(arg, ident"a"), depth + 1))
         # echo repeat("  ", depth), "mh", treerepr(newArgs[^1][0][^1])
         if len(newArgs[^1]) > 1:
           newArgs[^1] = newArgs[^1][1]
           # echo result[1][generatorName]
           assert result[1].hasKey(generatorName)
           result[1][generatorName][repr(arg[0])] = "$1Field$2Gen" % [$ident, repr(arg[0])]
-          newArgs[^1][0][0][0] = newIdentNode(!(result[1][generatorName][repr(arg[0])]))
+          newArgs[^1][0][0][0] = ident(result[1][generatorName][repr(arg[0])])
 
-      args = @[newIdentNode(!($generatorName))]
-      # args = @[generateTweak(args[0], newIdentNode(!($generatorName)))]
-      # args = concat(@[newIdentNode(!($generatorName))], generateTypeArgs())
-      var generatorNameQuote = newIdentNode(!generatorName)
+      args = @[ident($generatorName)]
+      var generatorNameQuote = ident(generatorName)
       var identQuote = newLit($ident)
       if analyze:
         var t = quote:
@@ -248,7 +247,7 @@ proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze:
       # (otherFields, t) = analyzeObject(generatorName, result[1][generatorName])
       # result[1][generatorName] = t
     generatorName = "Type"
-  var generatorNameNode = newIdentNode(!generatorName)
+  var generatorNameNode = ident(generatorName)
   # if generator[1].kind == nnkObjConstr:
   #   result[0] = quote:
   #     var `identGen` = ObjectGen()
@@ -264,7 +263,7 @@ proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze:
 proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNode, NimNode) =
   assert generator.kind == nnkIdentDefs
   var ident = generator[0]
-  var identGen = newIdentNode(!("$1Gen" % $(ident)))
+  var identGen = ident("$1Gen" % $ident)
   var expression = generator[1]
   if generator[1].kind == nnkPrefix and $generator[1][0] == "!":
     if generator[1][1].kind == nnkCall:
@@ -286,7 +285,7 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
   else:
     result[1] = nnkStmtList.newTree()
     for label, fields in fieldTable:
-      var labelQuote = newIdentNode(!label)
+      var labelQuote = ident(label)
       var x0 = quote:
         var `ident` = `labelQuote`()
       result[1].add(x0)
@@ -294,16 +293,16 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
       var t = quote:
         analyzeLoop(`labelQuote`, `identString`)
       for field, fieldGen in fields:
-        var fieldQuote = newIdentNode(!field)
-        var fieldGenQuote = newIdentNode(!fieldGen)
+        var fieldQuote = ident(field)
+        var fieldGenQuote = ident(fieldGen)
         var x1 = quote:
           `ident`.`fieldQuote` = `fieldGenQuote`.generate()
         result[1].add(x1)
         t.add(newLit(field))
       result[1].add(t)
   var s = newLit($generator[0])
-  var error = newIdentNode(!"error")
-  var add = newIdentNode(!"add")
+  var error = ident("error")
+  var add = ident("add")
   result[2] = quote:
     `error`.`add`("[" & `s` & "] " & $(`ident`) & "\n")
 
@@ -316,8 +315,9 @@ proc serializeTest*(sourcePath: string, success: bool, nodes: varargs[JsonNode])
       "args": nodes,
       "success": success
     }
-  let folder = paramStr(1).split(':', 1)[1]
+  let folder = saveOption
   let name = sourcePath.rsplit("/", 1)[1].rsplit(".", 1)[0] # TODO js
+  echo currentSourcePath
   createDir(folder / name)
   var max = -1
   for kind, path in walkDir(folder / name, relative=true):
@@ -345,6 +345,19 @@ proc toTypename*(node: NimNode): NimNode =
     # echo node.repr
     node
 
+proc expand(args: NimNode): NimNode =
+  result = nnkArgList.newTree()
+  for arg in args:
+    if arg.kind == nnkEmpty:
+      continue
+    expectKind arg, nnkIdentDefs
+    if arg.len == 3:
+      result.add(arg)
+    else:
+      for z in 0 ..< arg.len - 2:
+        result.add(nnkIdentDefs.newTree(arg[z], arg[^2], arg[^1]))
+
+
 proc generateQuicktest*(args: NimNode): NimNode =
   var label: string
   var times = newLit(50)
@@ -358,9 +371,8 @@ proc generateQuicktest*(args: NimNode): NimNode =
     assert args[0].kind == nnkCall
     label = $(args[0][0])
     doNode = args[0][1]
-  let generators = toSeq(doNode[3]).filterIt(it.kind != nnkEmpty)
-  # echo treerepr(generators[0])
-  # echo treerepr(generators[1])
+  let generators = expand(doNode[3])
+  # let generators = toSeq(argsNode).filterIt(it.kind != nnkEmpty)
   let generatorNames = generators.mapIt($it[0])
   let gens = generators.mapIt(generateGenerator(it, generatorNames))
   result = buildMacro:
@@ -369,9 +381,9 @@ proc generateQuicktest*(args: NimNode): NimNode =
   var init = buildMacro:
     stmtList()
   init = init[0]
-  let error = newIdentNode(!"error")
+  let error = ident("error")
   var checkpoint = quote:
-    var `error` = "values:\n"
+    var `error` = "\n"
 
   checkpoint = nnkStmtList.newTree(checkpoint)
   for gen in gens:
@@ -380,7 +392,7 @@ proc generateQuicktest*(args: NimNode): NimNode =
     checkpoint.add(gen[2])
   
   let test = doNode[^1]
-  let acheckpoint = newIdentNode(!"checkpoint")
+  let acheckpoint = ident("checkpoint")
   let e = quote:
     `acheckpoint`(`error`)
   checkpoint.add(e)
@@ -399,13 +411,14 @@ proc generateQuicktest*(args: NimNode): NimNode =
     deserializations.add(deserialization)
 
   let reprCode = quote:
-    let path = paramStr(1)[5..^1]
+    let path = reprOption
     let serialized = readFile(path)
     let args {.inject.} = serialized.parseJson{"args"}
     `deserializations`
-    # `checkpoint`
+    `checkpoint`
     `test`
 
+  # TODO: currentSourcePath always quicktest
   var serialize = nnkCall.newTree(
     ident("serializeTest"),
     ident("currentSourcePath"),
@@ -424,19 +437,22 @@ proc generateQuicktest*(args: NimNode): NimNode =
     var successCount = 0
     for z in 0..<`times`:
       `init`
-      # `checkpoint`
+      `checkpoint`
       `test`
-      if paramCount() > 0 and paramStr(1).startsWith("save:"):
-        case testStatusIMPL:
-        of FAILED:
+      case testStatusIMPL:
+      of FAILED:
+        if saveOption.len > 0:
           `serialize`
-        of OK:
-          if successCount == 0:
+        if failFastOption:
+          break
+      of OK:
+        if saveOption.len > 0:
+          if successCount mod 20 == 0:
             `serialize`
             successCount = 0
           successCount += 1
-        else:
-          discard
+      else:
+        discard
   let generatedTest = quote:
     if paramCount() > 0 and paramStr(1).startsWith("repr:"):
       `reprCode`
@@ -508,9 +524,9 @@ type
 
 
 type
-  Iterator[T] = concept a
-    for element in a:
-      element is T
+  # Iterator[T] = concept a
+  #   for element in a:
+  #     element is T
 
   WithLimit*[T] = concept a
     a.limit is LimitMixin[T]
@@ -576,9 +592,19 @@ proc arbitrary*[T](t: typedesc[NumberGen[T]]): NumberGen[T] =
   NumberGen[T]()
 
 proc randomIn*(rng: var Engine, min: int, max: int): int =
-  if min == low(int):
-    return randomInt(rng, high(int))
+  if min == int.low:
+    return randomInt(rng, int.high)
   return randomInt(rng, max - min) + min
+
+# proc randomUInt*[T: uint | uint16 | uint32 | uint64](rng: var Engine, min: T, max: T): T =
+#   return randomUInt(rng, max - min) + min
+
+# TODO: uint rng
+proc randomIn*[T](rng: var Engine, min: T, max: T, t: type T): T =
+  if min == max:
+    return max
+  # return min + randomInt(rng, t) mod (max - min)
+  return engine.randomIn(min.int, max.int).to(T)
 
 proc choice*[T](rng: var Engine, elements: seq[T]): T =
   result = elements[randomInt(rng, len(elements))]
@@ -603,9 +629,10 @@ proc generateSequence*[T](rng: var Engine, generator: (int) -> T, limit: int, mi
 
 
 proc loadRange[T: SomeNumber](min: T, max: T, range: Slice[T]): (T, T) =
+  # echo min, " ", max, " ", range
   var minResult = min
   var maxResult = max
-  if range.a.int != EMPTY_RANGE.a and range.b.int != EMPTY_RANGE.b:
+  if range.a.int != EMPTY_RANGE.a or range.b.int != EMPTY_RANGE.b:
     minResult = range.a
     maxResult = range.b
   return (minResult, maxResult)
@@ -768,9 +795,9 @@ proc Type*[T: SomeNumber](
     rng: initRng())
 
 
-proc Type*[T](
-    t: typedesc[T]): Gen[T] =
-  result = Gen[T](rng: initRng())
+# proc Type*[T](
+#     t: typedesc[T]): Gen[T] =
+#   result = Gen[T](rng: initRng())
 
 
 proc generateInternal*(g: var StringGen): string =
@@ -838,6 +865,7 @@ proc Int*(
 
 proc generateInternal*(g: var IntGen): int =
   var started = false
+  # echo g.min, " ", g.max
   while not started or result in g.skip:
     started = true
     result = randomIn(g.rng, g.min, g.max)
@@ -882,9 +910,24 @@ proc generateInternal*[T](g: var SeqGen[T]): seq[T] =
       result.add(t.generate())
 
     
-proc generateInternal*[T](g: var NumberGen[T]): T =
-  result = randomIn(g.rng, g.limit.min.int, g.limit.max.int).to(T)
+proc generateInternal*[T: SomeNumber](g: var NumberGen[T]): T =
+  # echo "value", g.limit.min, g.limit.max is uint
+  when T is int:
+    result = randomIn(g.rng, g.limit.min.int, g.limit.max.int).to(T)
+  else:
+    result = randomIn(g.rng, g.limit.min, g.limit.max, T)
 
+
+proc init =
+  if paramCount() > 0:
+    for z in 1 .. paramCount():
+      if paramStr(z) == "--fail-fast" or paramStr(z) == "-f":
+        failFastOption = true
+      elif paramStr(z).startsWith("save:"):
+        saveOption = paramStr(z).split(':', 1)[1]
+      elif paramStr(z).startsWith("repr:"):
+        reprOption = paramStr(z).split(':', 1)[1]
+  echo saveOption
 
 when declared(disableParamFiltering):
   disableParamFiltering()
@@ -896,3 +939,5 @@ export json
 when defined(js):
   export js_lib
 
+
+init()

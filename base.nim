@@ -26,17 +26,21 @@ suite "base":
   # quicktest "mapIt" do (s: seq[Int(min = 0, max = 20)]):
   #   check(s.mapIt(it * 822).mapIt(it div 822) == s)
 
-  quicktest "object" do (a: string(alphabet=ALatin, max = 20)):
-    check(a == a)
+  # quicktest "object" do (a: string(alphabet=ALatin, max = 20)):
+  #   check(a == a)
 
-  quicktest "object" do (s: MyObject(a = string(alphabet=ALatin, max = 20))):
-    check(s.name().split('_')[^1] == s.a)
+  # quicktest "object" do (s: MyObject(a = string(alphabet=ALatin, max = 20))):
+  #   check(s.name().split('_')[^1] == s.a)
 
-  quicktest "int", 20 do (a: int(range=0..20), b: int(range=0..20)):
-    check a >= 0
+  quicktest "int", 20 do (a: int):
+    # echo a
+    check a + a == 2 * a
 
-  quicktest "uint", 100_000 do (a: uint(range=0..20), b: uint(range=0..20)):
-    check a * b == b * a
+  # quicktest "uint", 100_000 do (a: uint(range=0..20), b: uint(range=0..20)):
+  #   check a * b == b * a
 
-  quicktest "int32", 200 do (a: uint64(range=0..20), b: uint64(range=0..20)):
-    check a * b == b * a
+  # quicktest "int32", 200 do (a: uint64(range=0..20), b: uint64(range=0..20)):
+  #   check a * b == b * a
+    
+  quicktest "example", 20 do (x0, x1, x2, x3, y0, y1, y2, y3: uint):
+    check x0 in [x0]
