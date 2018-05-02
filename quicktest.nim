@@ -79,7 +79,6 @@ macro quicktest*(args: varargs[untyped]): untyped =
   result = quote:
     test `name`:
       `result`
-  echo repr(result)
 
 proc replaceNames(node: var NimNode, names: seq[string]) =
   var z = 0
