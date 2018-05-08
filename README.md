@@ -26,12 +26,58 @@ the way more generator-based hypothesis one.
 Basically most of the generation should be automatically composed based on compile time
 type introspection, but you should be able to tweak options for each element of the type
 
-## option
+## errors
+
+We display the generater args for an error and all errors in a test.
+If you pass the `-f / --fail-fast` option we stop on the first error.
+On an error you get the seed, test and iteration index
+You can pass them again using an ENV variable: if the test has spaces
+you can put it in "".
+
+
+```bash
+QUICKTEST_SEED = ..
+# optionally:
+QUICKTEST_TEST = ..
+QUICKTEST_ITERATION = ..
+```
+or as args
+
+```bash
+./atest -f seed:.. test:.. iteration:..
+```
+
+If you pass only the seed, quicktest will reproduce all tests, if you pass
+test and iteration too, it will only reproduce this iteration. This can break if you use additional
+randomness inside the test: even something that depends on globalRNG.
+Iteration arg requires test arg.
+
+## overriding random generator
+
+Quicktest uses QuickRNG which has `seed*: int64` and 
+
+```bash
+method randomize*(rng: QuickRNG, seed: int64) {.base.} =
+  raise newException(ValueError, "not implemented")
+
+method randomInt*(rng: QuickRNG, max: int): int {.base.} =
+  raise newException(ValueError, "not implemented")
+```
+
+You need to inherit it and override the methods to implement your own generator.
+
+You can `registerRNG(myRNG, seed=my)` and you can `registerRNG(defaultRNG, seed=my)` if
+you want to just change the seed: currently it's generated based on time which is not perfect
+
+## options
 
 ```bash
 save:folder # saves in folder subfolder with json reproductions
 repr:path # reproduces json save
 -f / --fail-fast # fails after first error
+--seed # initial seed
+--test # test to reproduce
+--iteration # iteration to reproduce
 ```
 
 ## how does it work

@@ -32,9 +32,10 @@ suite "base":
   # quicktest "object" do (s: MyObject(a = string(alphabet=ALatin, max = 20))):
   #   check(s.name().split('_')[^1] == s.a)
 
-  quicktest "int", 20 do (a: int):
-    # echo a
+  quicktest "int", 100 do (a: int(range=0..200)):
     check a + a == 2 * a
+    if a > 50:
+      check a == 10
 
   # quicktest "uint", 100_000 do (a: uint(range=0..20), b: uint(range=0..20)):
   #   check a * b == b * a

@@ -1,40 +1,108 @@
 import macros, breeze, unittest
 import strutils, sequtils, strformat, tables, intsets, sets, future, json
 
+type
+  QuickRNG* = ref object {.inheritable.}
+    seed*: int64
+    
+method randomize*(rng: QuickRNG, seed: int64) {.base.} =
+  raise newException(ValueError, "not implemented")
+
+method randomInt*(rng: QuickRNG, max: int): int {.base.} =
+  raise newException(ValueError, "not implemented")
+
+  
 when not defined(js):
-  import random.urandom, random.xorshift, os, ospaths, marshal
+  import random, os, ospaths, marshal, times, ospaths, hashes
 
   type
-    Engine = SystemRandom
-  var engine*: Engine = initSystemRandom()
-  proc initRng: Engine =
-    engine
+    # based on xorshiro128+
+    DefaultRNG = ref object of QuickRNG
 
-  # hm
+
+  method randomInt*(a: DefaultRNG, max: int): int =
+    rand(max)
+
+  
+  method randomize*(a: DefaultRNG, seed: int64) =
+    randomize(seed)
+
+
+  # directly taken from random.nim, improve
+  proc genSeed: int64 =
+    let now = getTime()
+    convert(Seconds, Nanoseconds, now.toUnix) + now.nanosecond
+
+  
+  var defaultRNG* = DefaultRNG()
+
+
+
 else:
   import jsffi, js_lib
 
   type
-    Engine* = ref object of js
+    DefaultRNG = ref object of QuickRNG
       engine*: js
+      seed*: int64
 
-  proc randomInt*(a: var Engine, max: int): int =
+  proc randomInt*(a: DefaultRNG, max: int): int =
     cast[int](a.engine.integer(0, max - 1))
 
   var require* {.importc.}: (cstring) -> js
   var jsrandom = require(cstring"random-js")
   var console* {.importc.}: js
   proc a*: js {.importcpp: "function(){var random = require('random-js');return new random(random.engines.mt19937().autoSeed())}()".}
-  var engine*: Engine = Engine(engine: a())
+  var defaultRNG* = DefaultRNG(engine: a())
 
-  proc initRng: Engine =
-    engine
 
+var globalRNG*: QuickRNG
+
+
+proc registerRNG*(rng: QuickRNG, seed: int64 = genSeed()) =
+  globalRNG = rng
+  globalRNG.seed = seed
 
 const EMPTY_RANGE = 0 .. -1
 var failFastOption* = false
 var saveOption* = ""
 var reprOption* = ""
+var seedOption* = getEnv("QUICKTEST_SEED", "0").parseBiggestInt.int64
+var testOption* = getEnv("QUICKTEST_TEST", "")
+var iterationOption* = getEnv("QUICKTEST_ITERATION", "-1").parseInt
+
+proc init =
+  if paramCount() > 0:
+    for z in 1 .. paramCount():
+      if paramStr(z) == "--fail-fast" or paramStr(z) == "-f":
+        failFastOption = true
+      elif paramStr(z).startsWith("save:"):
+        saveOption = paramStr(z).split(':', 1)[1]
+      elif paramStr(z).startsWith("repr:"):
+        reprOption = paramStr(z).split(':', 1)[1]
+      elif paramStr(z).startsWith("seed:"):
+        seedOption = paramStr(z).split(':', 1)[1].parseInt.int64
+      elif paramStr(z).startsWith("test:"):
+        testOption = paramStr(z).split(':', 1)[1]
+        if testOption.len >= 2 and testOption[0] == '"' and testOption[^1] == '"':
+          testOption = testOption[1 .. ^2]
+      elif paramStr(z).startsWith("iteration:"):
+        iterationOption = paramStr(z).split(':', 1)[1].parseInt
+
+  if iterationOption != -1 and testOption.len == 0:
+    echo "iteration requirest test name"
+    quit(1)
+  echo saveOption
+
+when declared(disableParamFiltering):
+  disableParamFiltering()
+
+init()
+
+if seedOption == 0'i64:
+  registerRNG(defaultRNG)
+else:
+  registerRNG(defaultRNG, seed=seedOption)
 
 macro genTo(t: untyped): untyped =
   let to = ident"to"
@@ -58,27 +126,34 @@ genTo(uint32)
 genTo(uint64)
 
 proc generateQuicktest*(args: NimNode): NimNode
-
 proc nameTest*(args: NimNode): string
-
 proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze: bool = true): (NimNode, Table[string, Table[string, string]])
-
-# macro ObjectGen*(t: typed, args: untyped): untyped =
-#   var typ = getType(t)
-#   if typ.kind == nnkBracketExpr and typ[1].kind == nnkBracketExpr and $typ[1][0] == "ref":
-#     typ = getType(typ[1][1])
-#   var name = args[0]
-#   var call = args[1][0]
-#   result = quote:
-#     echo 0
+proc generateReseed(args: NimNode): NimNode
 
 
 macro quicktest*(args: varargs[untyped]): untyped =
-  result = generateQuicktest(args)
+  let code = generateQuicktest(args)
+  let reseed = generateReseed(args)
   var name = newLit(nameTest(args))
+
   result = quote:
     test `name`:
-      `result`
+      `reseed`
+      `code`
+
+  # echo result.repr
+
+proc generateReseed(args: NimNode): NimNode =
+  var spec: string
+  if args[0].kind != nnkStrLit:
+    spec = args[0][1][3].repr
+  else:
+    spec = args[1][1][3].repr
+  # echo spec.hash
+  let specLen = newLit(spec.hash)
+  result = quote:
+    globalRNG.randomize(globalRNG.seed + `specLen`)
+
 
 proc replaceNames(node: var NimNode, names: seq[string]) =
   var z = 0
@@ -389,12 +464,10 @@ proc generateQuicktest*(args: NimNode): NimNode =
     init.add(gen[1])
     checkpoint.add(gen[2])
   
-  let test = doNode[^1]
-  let acheckpoint = ident("checkpoint")
-  let e = quote:
-    `acheckpoint`(`error`)
-  checkpoint.add(e)
 
+  let test = doNode[^1]
+  let index = quote: index
+  checkpoint.add quote do: `error`.add("seed:" & $globalRNG.seed & " test:" & `label` & " iteration:" & $`index`)
 
   var deserializations = nnkStmtList.newTree()
   for z, name in generatorNames:
@@ -413,7 +486,7 @@ proc generateQuicktest*(args: NimNode): NimNode =
     let serialized = readFile(path)
     let args {.inject.} = serialized.parseJson{"args"}
     `deserializations`
-    `checkpoint`
+    # `checkpoint`
     `test`
 
   # TODO: currentSourcePath always quicktest
@@ -433,12 +506,15 @@ proc generateQuicktest*(args: NimNode): NimNode =
 
   var generatedElse = quote:
     var successCount = 0
-    for z in 0..<`times`:
+    for `index` in 0..<`times`:
       `init`
-      `checkpoint`
+      if iterationOption != -1 and iterationOption != `index` and testOption == `label`:
+        continue
       `test`
       case testStatusIMPL:
       of FAILED:
+        `checkpoint`
+        echo `error`
         if saveOption.len > 0:
           `serialize`
         if failFastOption:
@@ -454,11 +530,14 @@ proc generateQuicktest*(args: NimNode): NimNode =
   let generatedTest = quote:
     if paramCount() > 0 and paramStr(1).startsWith("repr:"):
       `reprCode`
+    elif testOption.len > 0 and testOption != `label`:
+      skip
     else:
       `generatedElse`
   result.add(generatedTest)
   # echo result.repr
 
+# in the future we might have specific rng for a test, no need for now
 
 type
   Alphabet* = enum AUndefined, AAll, AAscii, ALatin, ALatinDigit, ANone
@@ -467,7 +546,6 @@ type
     arbitrary(type a) is Gen[T]
 
   Gen*[T] = ref object {.inheritable.}
-    rng*:       Engine
     last*:      T
     fil*:       FilterMixin[T]
 
@@ -498,7 +576,6 @@ type
     # last*:      seq[T]
     element*:   Gen[T]
     infer*:     bool
-    # rng*:       Engine
 
   InsideGen* = ref object of Gen[string]
     limit*:     LimitMixin[int]
@@ -589,40 +666,40 @@ proc arbitrary*[T](t: typedesc[SeqGen[T]]): SeqGen[T] =
 proc arbitrary*[T](t: typedesc[NumberGen[T]]): NumberGen[T] =
   NumberGen[T]()
 
-proc randomIn*(rng: var Engine, min: int, max: int): int =
+proc randomIn*(rng: QuickRNG, min: int, max: int): int =
   if min == int.low:
-    return randomInt(rng, int.high)
-  return randomInt(rng, max - min) + min
+    return rng.randomInt(int.high)
+  return rng.randomInt(max - min) + min
 
 # proc randomUInt*[T: uint | uint16 | uint32 | uint64](rng: var Engine, min: T, max: T): T =
 #   return randomUInt(rng, max - min) + min
 
 # TODO: uint rng
-proc randomIn*[T](rng: var Engine, min: T, max: T, t: type T): T =
+proc randomIn*[T](rng: QuickRNG, min: T, max: T, t: type T): T =
   if min == max:
     return max
   # return min + randomInt(rng, t) mod (max - min)
-  return engine.randomIn(min.int, max.int).to(T)
+  return rng.randomIn(min.int, max.int).to(T)
 
-proc choice*[T](rng: var Engine, elements: seq[T]): T =
-  result = elements[randomInt(rng, len(elements))]
+proc choice*[T](rng: QuickRNG, elements: seq[T]): T =
+  result = elements[rng.randomInt(elements.len)]
 
 proc toSeq*[T](s: set[T]): seq[T] =
   result = @[]
   for c in s:
     result.add(c)
 
-proc generateSequence*[T](rng: var Engine, elements: seq[T], min: int, max: int): seq[T] =
+proc generateSequence*[T](rng: QuickRNG, elements: seq[T], min: int, max: int): seq[T] =
   result = @[]
   var length = randomIn(rng, min, max)
   for element in 0..<length:
     result.add(choice(rng, elements))
 
-proc generateSequence*[T](rng: var Engine, generator: (int) -> T, limit: int, min: int, max: int): seq[T] =
+proc generateSequence*[T](rng: QuickRNG, generator: (int) -> T, limit: int, min: int, max: int): seq[T] =
   result = @[]
   var length = randomIn(rng, min, max)
   for element in 0..<length:
-    var number = randomInt(rng, limit)
+    var number = rng.randomInt(limit)
     result.add(generator(number))
 
 
@@ -652,8 +729,7 @@ proc String*(
     fil: FilterMixin[string](test: test, trans: trans),
     symbols: toSeq(symbols),
     alphabet: AUndefined,
-    last: "",
-    rng: initRng())
+    last: "")
 
 
 proc String*(
@@ -667,8 +743,7 @@ proc String*(
     limit: LimitMixin[int](min: minArg, max: maxArg),
     fil: FilterMixin[string](test: nil, trans: nil),
     alphabet: alphabet,
-    last: "",
-    rng: initRng())
+    last: "")
 
 
 
@@ -692,8 +767,7 @@ proc Type*(
     limit: LimitMixin[int](min: minArg, max: maxArg),
     fil: FilterMixin[string](test: test, trans: trans),
     alphabet: alphabet,
-    last: "",
-    rng: initRng())
+    last: "")
 
 
 proc Type*(
@@ -708,8 +782,7 @@ proc Type*(
   result = IntGen(
     limit: LimitMixin[int](min: minArg, max: maxArg),
     fil: FilterMixin[int](test: test, trans: trans),
-    skip: uniq(@[]),
-    rng: initRng())
+    skip: uniq(@[]))
 
 
 proc Type*(
@@ -717,7 +790,7 @@ proc Type*(
     test: (bool) -> bool = nil,
     trans: (bool) -> bool = nil): BoolGen =
 
-  result = BoolGen(fil: FilterMixin[bool](test: test, trans: trans), rng: initRng())
+  result = BoolGen(fil: FilterMixin[bool](test: test, trans: trans))
 
 
 proc Type*(
@@ -725,7 +798,7 @@ proc Type*(
     test: (char) -> bool = nil,
     trans: (char) -> char = nil): CharGen =
 
-  result = CharGen(fil: FilterMixin[char](test: test, trans: trans), rng: initRng())
+  result = CharGen(fil: FilterMixin[char](test: test, trans: trans))
 
 
 # range for float is not a good fit
@@ -738,8 +811,7 @@ proc Type*(
   
   result = FloatGen(
     limit: LimitMixin[float](min: min, max: max),
-    fil: FilterMixin[float](test: test, trans: trans),
-    rng: initRng())
+    fil: FilterMixin[float](test: test, trans: trans))
 
 
 proc Type*[T](
@@ -755,8 +827,7 @@ proc Type*[T](
     element: arbitrary(T),
     infer: true,
     limit: LimitMixin[int](min: minArg, max: maxArg),
-    fil: FilterMixin[seq[T]](test: test, trans: trans),
-    rng: initRng())
+    fil: FilterMixin[seq[T]](test: test, trans: trans))
 
 
 proc Type*[T](
@@ -773,8 +844,7 @@ proc Type*[T](
     element: element,
     infer: false,
     limit: LimitMixin[int](min: minArg, max: maxArg),
-    fil: FilterMixin[seq[T]](test: test, trans: trans),
-    rng: initRng())
+    fil: FilterMixin[seq[T]](test: test, trans: trans))
 
 
 proc Type*[T: SomeNumber](
@@ -789,8 +859,7 @@ proc Type*[T: SomeNumber](
   let (minArg, maxArg) = loadRange(min, max, tRange)
   result = NumberGen[T](
     limit: LimitMixin[T](min: minArg, max: maxArg),
-    fil: FilterMixin[T](), #test: test, trans: trans),
-    rng: initRng())
+    fil: FilterMixin[T]())
 
 
 # proc Type*[T](
@@ -834,15 +903,15 @@ proc generateInternal*(g: var StringGen): string =
     limit = 256
     # raise newException(ValueError, "None")
 
-  chars = generateSequence(g.rng, generator, limit, g.min, g.max)
+  chars = generateSequence(globalRNG, generator, limit, g.min, g.max)
   result = chars.join()
 
 proc Inside*(s: StringGen, min: int = 0, max: int = 10): InsideGen =
-  result = InsideGen(limit: LimitMixin[int](min: min, max: max), inside: s, rng: initRng())
+  result = InsideGen(limit: LimitMixin[int](min: min, max: max), inside: s)
 
 proc generateInternal*(g: var InsideGen): string =
-  var length = randomIn(g.rng, g.min, min(g.max, max(g.min + 1, len(g.inside.last))))
-  var first = randomIn(g.rng, 0, max(1, len(g.inside.last) - length))
+  var length = randomIn(globalRNG, g.min, min(g.max, max(g.min + 1, len(g.inside.last))))
+  var first = randomIn(globalRNG, 0, max(1, len(g.inside.last) - length))
   result = g.inside.last[first..first + length - 1]
   if len(result) < g.min:
     result.add(repeat(" ", g.min - len(result)))
@@ -857,8 +926,7 @@ proc Int*(
   let (minArg, maxArg) = loadRange(min, max, range)
   result = IntGen(
     limit: LimitMixin[int](min: minArg, max: maxArg),
-    skip: uniq(skip),
-    rng: initRng())
+    skip: uniq(skip))
 
 
 proc generateInternal*(g: var IntGen): int =
@@ -866,10 +934,10 @@ proc generateInternal*(g: var IntGen): int =
   # echo g.min, " ", g.max
   while not started or result in g.skip:
     started = true
-    result = randomIn(g.rng, g.min, g.max)
+    result = randomIn(globalRNG, g.min, g.max)
 
 proc generateInternal*(g: var BoolGen): bool =
-  result = bool(randomIn(g.rng, 0, 1))
+  result = bool(randomIn(globalRNG, 0, 1))
 
 proc generate*[T](g: var WithFilter[T]): T =
   var started = false
@@ -890,14 +958,14 @@ proc generate*[T](g: var SeqGen[T]): seq[T] =
       result = g.fil.trans(result)
 
 proc generateInternal*(g: var CharGen): char =
-  result = chr(randomIn(g.rng, 0, 127))
+  result = chr(randomIn(globalRNG, 0, 127))
 
 proc generateInternal*(g: var FloatGen): float =
-  result = float(randomIn(g.rng, int(g.min), int(g.max)))
+  result = float(randomIn(globalRNG, int(g.min), int(g.max)))
 
 
 proc generateInternal*[T](g: var SeqGen[T]): seq[T] =
-  var length = randomIn(g.rng, g.limit.min, g.limit.max)
+  var length = randomIn(globalRNG, g.limit.min, g.limit.max)
   result = @[]
   for z in 0..<length:
     if g.infer:
@@ -911,24 +979,9 @@ proc generateInternal*[T](g: var SeqGen[T]): seq[T] =
 proc generateInternal*[T: SomeNumber](g: var NumberGen[T]): T =
   # echo "value", g.limit.min, g.limit.max is uint
   when T is int:
-    result = randomIn(g.rng, g.limit.min.int, g.limit.max.int).to(T)
+    result = randomIn(globalRNG, g.limit.min.int, g.limit.max.int).to(T)
   else:
-    result = randomIn(g.rng, g.limit.min, g.limit.max, T)
-
-
-proc init =
-  if paramCount() > 0:
-    for z in 1 .. paramCount():
-      if paramStr(z) == "--fail-fast" or paramStr(z) == "-f":
-        failFastOption = true
-      elif paramStr(z).startsWith("save:"):
-        saveOption = paramStr(z).split(':', 1)[1]
-      elif paramStr(z).startsWith("repr:"):
-        reprOption = paramStr(z).split(':', 1)[1]
-  echo saveOption
-
-when declared(disableParamFiltering):
-  disableParamFiltering()
+    result = randomIn(globalRNG, g.limit.min, g.limit.max, T)
 
 # ok
 # fix the generator
@@ -937,5 +990,3 @@ export json
 when defined(js):
   export js_lib
 
-
-init()
