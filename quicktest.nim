@@ -44,7 +44,7 @@ else:
   type
     DefaultRNG = ref object of QuickRNG
       engine*: js
-      seed*: int64
+      # seed*: int64
 
   proc randomInt*(a: DefaultRNG, max: int): int =
     cast[int](a.engine.integer(0, max - 1))
@@ -54,6 +54,10 @@ else:
   var console* {.importc.}: js
   proc a*: js {.importcpp: "function(){var random = require('random-js');return new random(random.engines.mt19937().autoSeed())}()".}
   var defaultRNG* = DefaultRNG(engine: a())
+  proc now: int64 {.importcpp: "(new Date()).getTime()".}
+
+  proc genSeed: int64 =
+    now()
 
 
 var globalRNG*: QuickRNG
@@ -67,9 +71,14 @@ const EMPTY_RANGE = 0 .. -1
 var failFastOption* = false
 var saveOption* = ""
 var reprOption* = ""
-var seedOption* = getEnv("QUICKTEST_SEED", "0").parseBiggestInt.int64
-var testOption* = getEnv("QUICKTEST_TEST", "")
-var iterationOption* = getEnv("QUICKTEST_ITERATION", "-1").parseInt
+when not defined(js):
+  var seedOption* = getEnv("QUICKTEST_SEED", "0").parseBiggestInt.int64
+  var testOption* = getEnv("QUICKTEST_TEST", "")
+  var iterationOption* = getEnv("QUICKTEST_ITERATION", "-1").parseInt
+else:
+  var seedOption* = 0.int64
+  var testOption* = ""
+  var iterationOption* = -1
 
 proc init =
   if paramCount() > 0:
@@ -150,7 +159,10 @@ proc generateReseed(args: NimNode): NimNode =
   else:
     spec = args[1][1][3].repr
   # echo spec.hash
-  let specLen = newLit(spec.hash)
+  when not defined(js):
+    let specLen = newLit(spec.hash)
+  else:
+    let specLen = newLit(spec.len)
   result = quote:
     globalRNG.randomize(globalRNG.seed + `specLen`)
 
@@ -590,8 +602,7 @@ type
 
   SomeNumber = concept a, type T
     a.int       is int
-    int.to(type T)   is T
-
+    int.to(T)   is type(a)
 
 
 # proc to2[T: SomeNumber](i: int, other: type T): T =
@@ -702,6 +713,14 @@ proc generateSequence*[T](rng: QuickRNG, generator: (int) -> T, limit: int, min:
     var number = rng.randomInt(limit)
     result.add(generator(number))
 
+
+proc loadRange(min: int, max: int, range: Slice[int]): (int, int) =
+  var minResult = min
+  var maxResult = max
+  if range.a != EMPTY_RANGE.a or range.b != EMPTY_RANGE.b:
+    minResult = range.a
+    maxResult = range.b
+  return (minResult, maxResult)
 
 proc loadRange[T: SomeNumber](min: T, max: T, range: Slice[T]): (T, T) =
   # echo min, " ", max, " ", range
@@ -989,4 +1008,5 @@ proc generateInternal*[T: SomeNumber](g: var NumberGen[T]): T =
 export json
 when defined(js):
   export js_lib
+
 
