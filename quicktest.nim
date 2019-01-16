@@ -4,14 +4,14 @@ import strutils, sequtils, strformat, tables, intsets, sets, future, json
 type
   QuickRNG* = ref object {.inheritable.}
     seed*: int64
-    
+
 method randomize*(rng: QuickRNG, seed: int64) {.base.} =
   raise newException(ValueError, "not implemented")
 
 method randomInt*(rng: QuickRNG, max: int): int {.base.} =
   raise newException(ValueError, "not implemented")
 
-  
+
 when not defined(js):
   import random, os, ospaths, marshal, times, ospaths, hashes
 
@@ -23,7 +23,7 @@ when not defined(js):
   method randomInt*(a: DefaultRNG, max: int): int =
     rand(max)
 
-  
+
   method randomize*(a: DefaultRNG, seed: int64) =
     randomize(seed)
 
@@ -33,7 +33,7 @@ when not defined(js):
     let now = getTime()
     convert(Seconds, Nanoseconds, now.toUnix) + now.nanosecond
 
-  
+
   var defaultRNG* = DefaultRNG()
 
 
@@ -44,7 +44,7 @@ else:
   type
     DefaultRNG = ref object of QuickRNG
       engine*: js
-      # seed*: int64
+  # seed*: int64
 
   proc randomInt*(a: DefaultRNG, max: int): int =
     cast[int](a.engine.integer(0, max - 1))
@@ -93,7 +93,8 @@ proc init =
         seedOption = paramStr(z).split(':', 1)[1].parseInt.int64
       elif paramStr(z).startsWith("test:"):
         testOption = paramStr(z).split(':', 1)[1]
-        if testOption.len >= 2 and testOption[0] == '"' and testOption[^1] == '"':
+        if testOption.len >= 2 and testOption[0] == '"' and testOption[
+            ^1] == '"':
           testOption = testOption[1 .. ^2]
       elif paramStr(z).startsWith("iteration:"):
         iterationOption = paramStr(z).split(':', 1)[1].parseInt
@@ -111,7 +112,7 @@ init()
 if seedOption == 0'i64:
   registerRNG(defaultRNG)
 else:
-  registerRNG(defaultRNG, seed=seedOption)
+  registerRNG(defaultRNG, seed = seedOption)
 
 macro genTo(t: untyped): untyped =
   let to = ident"to"
@@ -120,7 +121,7 @@ macro genTo(t: untyped): untyped =
   result = quote:
     proc `to*`(`i`: int, `other`: type `t`): `t` =
       `t`(`i`)
-  # echo result.repr
+# echo result.repr
 
 
 genTo(int)
@@ -136,7 +137,8 @@ genTo(uint64)
 
 proc generateQuicktest*(args: NimNode): NimNode
 proc nameTest*(args: NimNode): string
-proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze: bool = true): (NimNode, Table[string, Table[string, string]])
+proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0,
+    analyze: bool = true): (NimNode, Table[string, Table[string, string]])
 proc generateReseed(args: NimNode): NimNode
 
 
@@ -150,7 +152,7 @@ macro quicktest*(args: varargs[untyped]): untyped =
       `reseed`
       `code`
 
-  # echo result.repr
+# echo result.repr
 
 proc generateReseed(args: NimNode): NimNode =
   var spec: string
@@ -194,7 +196,7 @@ proc generateTypeArgs(expression: NimNode, base: NimNode): seq[NimNode] =
     for x in expression:
       if z > 0:
         t[1].add(x)
-      inc z        
+      inc z
   var a = base
   var t2 = quote:
     `a`[`element`]
@@ -217,7 +219,7 @@ proc generateTypeArgs(expression: NimNode, base: NimNode): seq[NimNode] =
 #     for x in expression:
 #       if z > 0:
 #         t[1].add(x)
-#       inc z        
+#       inc z
 
 proc analyzeInternal(name: NimNode, fields: NimNode): seq[NimNode] =
   var x = getType(name)
@@ -231,7 +233,8 @@ proc analyzeInternal(name: NimNode, fields: NimNode): seq[NimNode] =
     if repr(field) notin fieldsRepr:
       result.add(field)
 
-macro analyzeObject(name: typed, gen: string, fields: varargs[string]): untyped =
+macro analyzeObject(name: typed, gen: string,
+    fields: varargs[string]): untyped =
   var internal = analyzeInternal(name, fields)
   result = nnkStmtList.newTree()
   for field in internal:
@@ -241,7 +244,7 @@ macro analyzeObject(name: typed, gen: string, fields: varargs[string]): untyped 
         ident(field.repr),
         nnkCall.newTree(ident(v.repr))),
       ident("$1Field$2" % [$gen, repr(field)]),
-      analyze=false)
+      analyze = false)
     # echo treerepr(n)
     result.add(nnkVarSection.newTree(
       nnkIdentDefs.newTree(
@@ -260,11 +263,13 @@ macro analyzeLoop(name: typed, gen: string, fields: varargs[string]): untyped =
     var t = quote:
       `genQuote`.`f` = `generator`.generate()
     result.add(t)
-  # echo repr(result)
+# echo repr(result)
 
-let BUILTIN_NAMES = toSet(["string", "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "float", "bool"])
+let BUILTIN_NAMES {.compileTime.} = toSet(["string", "int", "int8", "int16", "int32", "int64",
+    "uint", "uint8", "uint16", "uint32", "uint64", "float", "bool"])
 
-proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze: bool = true): (NimNode, Table[string, Table[string, string]]) =
+proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0,
+    analyze: bool = true): (NimNode, Table[string, Table[string, string]]) =
   var identGen = ident("$1Gen" % $(ident))
   var generatorName: string
   var args: seq[NimNode] = @[]
@@ -309,7 +314,8 @@ proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze:
       for arg in args:
         # echo repeat("  ", depth), "hm", repr(arg[1])
         # echo repeat("  ", depth), "hm", repr(newIdentNode(!("a")))
-        var (argNode, _) = generateTweak(arg, ident("$1Field$2" % [$ident, repr(arg[0])]), depth + 1, analyze=analyze)
+        var (argNode, _) = generateTweak(arg, ident("$1Field$2" % [$ident,
+            repr(arg[0])]), depth + 1, analyze = analyze)
         newArgs.add(argNode)
         # newArgs.add(generateTweak(arg, ident"a"), depth + 1))
         # echo repeat("  ", depth), "mh", treerepr(newArgs[^1][0][^1])
@@ -317,7 +323,8 @@ proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze:
           newArgs[^1] = newArgs[^1][1]
           # echo result[1][generatorName]
           assert result[1].hasKey(generatorName)
-          result[1][generatorName][repr(arg[0])] = "$1Field$2Gen" % [$ident, repr(arg[0])]
+          result[1][generatorName][repr(arg[0])] = "$1Field$2Gen" % [$ident,
+              repr(arg[0])]
           newArgs[^1][0][0][0] = ident(result[1][generatorName][repr(arg[0])])
 
       args = @[ident($generatorName)]
@@ -329,7 +336,7 @@ proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze:
         for label, field in result[1][generatorName]:
           t.add(newLit(label))
         newArgs.add(t)
-      # var t: Table[string, string]
+    # var t: Table[string, string]
       # (otherFields, t) = analyzeObject(generatorName, result[1][generatorName])
       # result[1][generatorName] = t
     generatorName = "Type"
@@ -345,15 +352,17 @@ proc generateTweak(expression: NimNode, ident: NimNode, depth: int = 0, analyze:
   result[0] = nnkStmtList.newTree(result[0])
   for newArg in newArgs:
     result[0].add(newArg)
-  
-proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNode, NimNode) =
+
+proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode,
+    NimNode, NimNode) =
   assert generator.kind == nnkIdentDefs
   var ident = generator[0]
   var identGen = ident("$1Gen" % $ident)
   var expression = generator[1]
   if generator[1].kind == nnkPrefix and $generator[1][0] == "!":
     if generator[1][1].kind == nnkCall:
-      expression = nnkCall.newTree(nnkPrefix.newTree(generator[1][0], generator[1][1][0]))
+      expression = nnkCall.newTree(nnkPrefix.newTree(generator[1][0],
+          generator[1][1][0]))
       var z = 0
       for g in generator[1][1]:
         if z > 0:
@@ -395,7 +404,8 @@ proc generateGenerator(generator: NimNode, names: seq[string]): (NimNode, NimNod
 proc serialize*[T](value: T, name: string): JsonNode =
   %(@[name, $$value])
 
-proc serializeTest*(sourcePath: string, success: bool, nodes: varargs[JsonNode]) =
+proc serializeTest*(sourcePath: string, success: bool, nodes: varargs[
+    JsonNode]) =
   let serialized = %*
     {
       "args": nodes,
@@ -405,7 +415,7 @@ proc serializeTest*(sourcePath: string, success: bool, nodes: varargs[JsonNode])
   let name = paramStr(0).rsplit("/", 1)[1].rsplit(".", 1)[0] # TODO js
   createDir(folder / name)
   var max = -1
-  for kind, path in walkDir(folder / name, relative=true):
+  for kind, path in walkDir(folder / name, relative = true):
     if path.startsWith("repr_"):
       let id = path[5..^1].split('.', 1)[0].parseInt
       if max < id:
@@ -418,7 +428,7 @@ proc nameTest*(args: NimNode): string =
     return $(args[0])
   else:
     return $(args[0][0])
-  
+
 proc toTypename*(node: NimNode): NimNode =
   if node.kind == nnkIdent:
     node
@@ -475,11 +485,12 @@ proc generateQuicktest*(args: NimNode): NimNode =
     result.add(gen[0])
     init.add(gen[1])
     checkpoint.add(gen[2])
-  
+
 
   let test = doNode[^1]
   let index = quote: index
-  checkpoint.add quote do: `error`.add("seed:" & $globalRNG.seed & " test:" & `label` & " iteration:" & $`index`)
+  checkpoint.add quote do: `error`.add("seed:" & $globalRNG.seed & " test:" & 
+      `label` & " iteration:" & $`index`)
 
   var deserializations = nnkStmtList.newTree()
   for z, name in generatorNames:
@@ -547,7 +558,7 @@ proc generateQuicktest*(args: NimNode): NimNode =
     else:
       `generatedElse`
   result.add(generatedTest)
-  # echo result.repr
+# echo result.repr
 
 # in the future we might have specific rng for a test, no need for now
 
@@ -558,51 +569,51 @@ type
     arbitrary(type a) is Gen[T]
 
   Gen*[T] = ref object {.inheritable.}
-    last*:      T
-    fil*:       FilterMixin[T]
+    last*: T
+    fil*: FilterMixin[T]
 
   LimitMixin*[T] = ref object
-    min*:       T
-    max*:       T
+    min*: T
+    max*: T
 
   FilterMixin*[T] = ref object
-    test*:      (T) -> bool
-    trans*:     (T) -> T
+    test*: (T) -> bool
+    trans*: (T) -> T
 
   StringGen* = ref object of Gen[string]
-    limit*:     LimitMixin[int]
-    symbols:    seq[char]
-    alphabet:   Alphabet
+    limit*: LimitMixin[int]
+    symbols: seq[char]
+    alphabet: Alphabet
 
   BoolGen* = ref object of Gen[bool]
 
   CharGen* = ref object of Gen[char]
 
   FloatGen* = ref object of Gen[float]
-    limit*:     LimitMixin[float]
+    limit*: LimitMixin[float]
 
   SeqGen*[T] = ref object of Gen[seq[T]]
     # slimit*:    LimitMixin[int]
     # sfil*:      FilterMixin[seq[T]]
-    limit*:     LimitMixin[int]
+    limit*: LimitMixin[int]
     # last*:      seq[T]
-    element*:   Gen[T]
-    infer*:     bool
+    element*: Gen[T]
+    infer*: bool
 
   InsideGen* = ref object of Gen[string]
-    limit*:     LimitMixin[int]
-    inside*:    StringGen
+    limit*: LimitMixin[int]
+    inside*: StringGen
 
   IntGen* = ref object of Gen[int]
-    limit*:     LimitMixin[int]
-    skip*:      IntSet
+    limit*: LimitMixin[int]
+    skip*: IntSet
 
   NumberGen*[T] = ref object of Gen[T]
-    limit*:     LimitMixin[T]
+    limit*: LimitMixin[T]
 
   SomeNumber = concept a, type T
-    a.int       is int
-    int.to(T)   is type(a)
+    a.int is int
+    int.to(T) is type(a)
 
 
 # proc to2[T: SomeNumber](i: int, other: type T): T =
@@ -700,13 +711,15 @@ proc toSeq*[T](s: set[T]): seq[T] =
   for c in s:
     result.add(c)
 
-proc generateSequence*[T](rng: QuickRNG, elements: seq[T], min: int, max: int): seq[T] =
+proc generateSequence*[T](rng: QuickRNG, elements: seq[T], min: int,
+    max: int): seq[T] =
   result = @[]
   var length = randomIn(rng, min, max)
   for element in 0..<length:
     result.add(choice(rng, elements))
 
-proc generateSequence*[T](rng: QuickRNG, generator: (int) -> T, limit: int, min: int, max: int): seq[T] =
+proc generateSequence*[T](rng: QuickRNG, generator: (int) -> T, limit: int,
+    min: int, max: int): seq[T] =
   result = @[]
   var length = randomIn(rng, min, max)
   for element in 0..<length:
@@ -741,7 +754,7 @@ proc String*(
     min: int = 0,
     max: int = 20,
     range: Slice[int] = EMPTY_RANGE): StringGen =
-  
+
   let (minArg, maxArg) = loadRange(min, max, range)
   result = StringGen(
     limit: LimitMixin[int](min: minArg, max: maxArg),
@@ -756,7 +769,7 @@ proc String*(
     min: int = 0,
     max: int = 20,
     range: Slice[int] = EMPTY_RANGE): StringGen =
-  
+
   let (minArg, maxArg) = loadRange(min, max, range)
   result = StringGen(
     limit: LimitMixin[int](min: minArg, max: maxArg),
@@ -780,7 +793,7 @@ proc Type*(
     max: int = 20,
     range: Slice[int] = EMPTY_RANGE,
     alphabet: Alphabet = AUndefined): StringGen =
-  
+
   let (minArg, maxArg) = loadRange(min, max, range)
   result = StringGen(
     limit: LimitMixin[int](min: minArg, max: maxArg),
@@ -827,7 +840,7 @@ proc Type*(
     trans: (float) -> float = nil,
     min: float = 0.0,
     max: float = 20.0): FloatGen =
-  
+
   result = FloatGen(
     limit: LimitMixin[float](min: min, max: max),
     fil: FilterMixin[float](test: test, trans: trans))
@@ -840,7 +853,7 @@ proc Type*[T](
     min: int = 0,
     max: int = 20,
     range: Slice[int] = EMPTY_RANGE): SeqGen[T] =
-  
+
   let (minArg, maxArg) = loadRange(min, max, range)
   result = SeqGen[T](
     element: arbitrary(T),
@@ -857,7 +870,7 @@ proc Type*[T](
     min: int = 0,
     max: int = 20,
     range: Slice[int] = EMPTY_RANGE): SeqGen[T] =
-  
+
   let (minArg, maxArg) = loadRange(min, max, range)
   result = SeqGen[T](
     element: element,
@@ -870,10 +883,10 @@ proc Type*[T: SomeNumber](
     t: typedesc[T],
     # test: (T) -> bool = nil,
     # trans: (T) -> int = nil,
-    min: T = 0,
+  min: T = 0,
     max: T = 20,
     range: Slice[int] = EMPTY_RANGE): NumberGen[T] =
-  
+
   let tRange = HSlice[T, T](a: range.a.to(T), b: range.b.to(T))
   let (minArg, maxArg) = loadRange(min, max, tRange)
   result = NumberGen[T](
@@ -920,7 +933,7 @@ proc generateInternal*(g: var StringGen): string =
   of ANone, AUndefined:
     generator = (number: int) => chr(number)
     limit = 256
-    # raise newException(ValueError, "None")
+  # raise newException(ValueError, "None")
 
   chars = generateSequence(globalRNG, generator, limit, g.min, g.max)
   result = chars.join()
@@ -929,7 +942,8 @@ proc Inside*(s: StringGen, min: int = 0, max: int = 10): InsideGen =
   result = InsideGen(limit: LimitMixin[int](min: min, max: max), inside: s)
 
 proc generateInternal*(g: var InsideGen): string =
-  var length = randomIn(globalRNG, g.min, min(g.max, max(g.min + 1, len(g.inside.last))))
+  var length = randomIn(globalRNG, g.min, min(g.max, max(g.min + 1,
+      len(g.inside.last))))
   var first = randomIn(globalRNG, 0, max(1, len(g.inside.last) - length))
   result = g.inside.last[first..first + length - 1]
   if len(result) < g.min:
@@ -941,7 +955,7 @@ proc Int*(
     max: int = high(int),
     range: Slice[int] = EMPTY_RANGE,
     skip: seq[int] = @[]): IntGen =
-  
+
   let (minArg, maxArg) = loadRange(min, max, range)
   result = IntGen(
     limit: LimitMixin[int](min: minArg, max: maxArg),
@@ -994,7 +1008,7 @@ proc generateInternal*[T](g: var SeqGen[T]): seq[T] =
       var t = cast[type(arbitrary(T))](g.element) # are you fucking kidding me
       result.add(t.generate())
 
-    
+
 proc generateInternal*[T: SomeNumber](g: var NumberGen[T]): T =
   # echo "value", g.limit.min, g.limit.max is uint
   when T is int:
