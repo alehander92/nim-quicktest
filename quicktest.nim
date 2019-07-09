@@ -421,7 +421,10 @@ proc serializeTest*(sourcePath: string, success: bool, nodes: varargs[
       if max < id:
         max = id
 
-  writeFile(folder / name / &"repr_{max + 1}.json", $serialized)
+  when not defined(js):
+    writeFile(folder / name / &"repr_{max + 1}.json", $serialized)
+  else:
+    js_lib.writeFile(folder / name / &"repr_{max + 1}.json", $serialized)
 
 proc nameTest*(args: NimNode): string =
   if args[0].kind == nnkStrLit:
