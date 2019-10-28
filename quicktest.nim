@@ -1,4 +1,4 @@
-import macros, breeze, unittest
+import macros, breeze
 import strutils, sequtils, strformat, tables, intsets, sets, future, json
 
 type
@@ -151,6 +151,7 @@ macro quicktest*(args: varargs[untyped]): untyped =
     test `name`:
       `reseed`
       `code`
+
 
 # echo result.repr
 
@@ -559,7 +560,8 @@ proc generateQuicktest*(args: NimNode): NimNode =
     elif testOption.len > 0 and testOption != `label`:
       skip
     else:
-      `generatedElse`
+      discard 
+      # TODO `generatedElse`
   result.add(generatedTest)
 # echo result.repr
 
