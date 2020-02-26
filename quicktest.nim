@@ -633,8 +633,11 @@ type
   WithLimit*[T] = concept a
     a.limit is LimitMixin[T]
 
+{.push hints:off.}
+type
   WithFilter*[T] = concept a
     a.fil is FilterMixin[T]
+{.pop.}
 
 proc setLast*[T](a: Gen[T], value: T) =
   a.last = value
