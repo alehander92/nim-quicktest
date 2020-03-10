@@ -102,7 +102,7 @@ proc init =
   if iterationOption != -1 and testOption.len == 0:
     echo "iteration requirest test name"
     quit(1)
-  echo saveOption
+  # echo saveOption
 
 when declared(disableParamFiltering):
   disableParamFiltering()
