@@ -2,7 +2,7 @@ import macros, breeze, unittest
 import strutils, sequtils, strformat, tables, intsets, sets, future, json
 
 type
-  QuickRNG* = ref object {.inheritable.}
+  QuickRNG* {.inheritable.} = ref object
     seed*: int64
 
 method randomize*(rng: QuickRNG, seed: int64) {.base.} =
@@ -571,7 +571,7 @@ type
   Arbitrary*[T] = concept a
     arbitrary(type a) is Gen[T]
 
-  Gen*[T] = ref object {.inheritable.}
+  Gen*[T] {.inheritable.} = ref object
     last*: T
     fil*: FilterMixin[T]
 
